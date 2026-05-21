@@ -165,128 +165,132 @@ export const AuthScreen = ({ mode }: AuthScreenProps) => {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <PhoneStatus />
-            <BrandHeader compact={!isSignup} />
-
-            {isSignup ? (
-              <SignupHero />
-            ) : (
-              <LoginHero />
-            )}
-
-            <View style={[styles.formWrap, isSignup && styles.signupFormWrap]}>
+            <View style={styles.topSection}>
+              <BrandHeader compact={!isSignup} />
               {isSignup ? (
-                <AuthField
-                  icon="user"
-                  onChangeText={setFullName}
-                  placeholder="Full name"
-                  textContentType="name"
-                  value={fullName}
-                />
-              ) : null}
-
-              <AuthField
-                autoCapitalize="none"
-                autoComplete="email"
-                icon="mail"
-                inputMode="email"
-                keyboardType="email-address"
-                onChangeText={setEmail}
-                placeholder={isSignup ? "Email address" : "Email address"}
-                textContentType="emailAddress"
-                value={email}
-              />
-
-              <AuthField
-                autoCapitalize="none"
-                autoComplete={isSignup ? "new-password" : "current-password"}
-                icon="lock"
-                onChangeText={setPassword}
-                placeholder="Password"
-                rightElement={
-                  <PasswordToggle
-                    showPassword={showPassword}
-                    setShowPassword={setShowPassword}
-                  />
-                }
-                secureTextEntry={!showPassword}
-                textContentType={isSignup ? "newPassword" : "password"}
-                value={password}
-              />
-
-              {isSignup ? (
-                <>
-                  <AuthField
-                    autoCapitalize="none"
-                    autoComplete="new-password"
-                    icon="lock"
-                    onChangeText={setConfirmPassword}
-                    placeholder="Confirm password"
-                    rightElement={
-                      <PasswordToggle
-                        showPassword={showPassword}
-                        setShowPassword={setShowPassword}
-                      />
-                    }
-                    secureTextEntry={!showPassword}
-                    textContentType="newPassword"
-                    value={confirmPassword}
-                  />
-
-                  <View style={styles.strengthRow}>
-                    <Text style={styles.strengthLabel}>Password strength</Text>
-                    <Text style={styles.strengthValue}>{passwordStrength}</Text>
-                  </View>
-                  <View style={styles.strengthBars}>
-                    <View style={styles.strengthBarActive} />
-                    <View style={passwordStrength !== "Weak" ? styles.strengthBarActive : styles.strengthBarMuted} />
-                    <View style={passwordStrength === "Strong" ? styles.strengthBarActive : styles.strengthBarMuted} />
-                    <View style={styles.strengthBarMuted} />
-                  </View>
-                </>
+                <SignupHero />
               ) : (
-                <Pressable accessibilityRole="button" style={styles.forgotButton}>
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </Pressable>
+                <LoginHero />
               )}
-
-              {validationMessage ? (
-                <Text style={styles.validationText}>{validationMessage}</Text>
-              ) : null}
-              {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-              <Pressable
-                accessibilityLabel={isSignup ? "Create Account" : "Log In"}
-                accessibilityRole="button"
-                disabled={isSubmitting}
-                onPress={handleSubmit}
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  pressed && styles.pressed
-                ]}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={colors.background} />
-                ) : (
-                  <>
-                    <Text style={styles.primaryButtonText}>
-                      {isSignup ? "Create Account" : "Log In"}
-                    </Text>
-                    <ArrowRight color={colors.background} size={24} strokeWidth={2.8} />
-                  </>
-                )}
-              </Pressable>
             </View>
 
-            <SocialSection stacked={!isSignup} />
+            <View style={styles.bottomContainer}>
+              <View style={[styles.formWrap, isSignup && styles.signupFormWrap]}>
+                {isSignup ? (
+                  <AuthField
+                    icon="user"
+                    onChangeText={setFullName}
+                    placeholder="Full name"
+                    textContentType="name"
+                    value={fullName}
+                  />
+                ) : null}
 
-            <View style={styles.bottomCopy}>
-              <Text style={styles.bottomText}>
-                {isSignup ? "Already have an account?" : "Don't have an account?"}
-              </Text>
-              <Link href={isSignup ? "/login" : "/signup"} style={styles.bottomLink}>
-                {isSignup ? "Sign in" : "Sign up"}
-              </Link>
+                <AuthField
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  icon="mail"
+                  inputMode="email"
+                  keyboardType="email-address"
+                  onChangeText={setEmail}
+                  placeholder={isSignup ? "Email address" : "Email address"}
+                  textContentType="emailAddress"
+                  value={email}
+                />
+
+                <AuthField
+                  autoCapitalize="none"
+                  autoComplete={isSignup ? "new-password" : "current-password"}
+                  icon="lock"
+                  onChangeText={setPassword}
+                  placeholder="Password"
+                  rightElement={
+                    <PasswordToggle
+                      showPassword={showPassword}
+                      setShowPassword={setShowPassword}
+                    />
+                  }
+                  secureTextEntry={!showPassword}
+                  textContentType={isSignup ? "newPassword" : "password"}
+                  value={password}
+                />
+
+                {isSignup ? (
+                  <>
+                    <AuthField
+                      autoCapitalize="none"
+                      autoComplete="new-password"
+                      icon="lock"
+                      onChangeText={setConfirmPassword}
+                      placeholder="Confirm password"
+                      rightElement={
+                        <PasswordToggle
+                          showPassword={showPassword}
+                          setShowPassword={setShowPassword}
+                        />
+                      }
+                      secureTextEntry={!showPassword}
+                      textContentType="newPassword"
+                      value={confirmPassword}
+                    />
+
+                    <View style={styles.strengthRow}>
+                      <Text style={styles.strengthLabel}>Password strength</Text>
+                      <Text style={styles.strengthValue}>{passwordStrength}</Text>
+                    </View>
+                    <View style={styles.strengthBars}>
+                      <View style={styles.strengthBarActive} />
+                      <View style={passwordStrength !== "Weak" ? styles.strengthBarActive : styles.strengthBarMuted} />
+                      <View style={passwordStrength === "Strong" ? styles.strengthBarActive : styles.strengthBarMuted} />
+                      <View style={styles.strengthBarMuted} />
+                    </View>
+                  </>
+                ) : (
+                  <Pressable accessibilityRole="button" style={styles.forgotButton}>
+                    <Text style={styles.forgotText}>Forgot password?</Text>
+                  </Pressable>
+                )}
+
+                {validationMessage ? (
+                  <Text style={styles.validationText}>{validationMessage}</Text>
+                ) : null}
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                <Pressable
+                  accessibilityLabel={isSignup ? "Create Account" : "Log In"}
+                  accessibilityRole="button"
+                  disabled={isSubmitting}
+                  onPress={handleSubmit}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    pressed && styles.pressed
+                  ]}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator color={colors.background} />
+                  ) : (
+                    <>
+                      <Text style={styles.primaryButtonText}>
+                        {isSignup ? "Create Account" : "Log In"}
+                      </Text>
+                      <ArrowRight color={colors.background} size={24} strokeWidth={2.8} />
+                    </>
+                  )}
+                </Pressable>
+
+                <SecurityNotice />
+              </View>
+
+              <SocialSection stacked={!isSignup} />
+
+              <View style={styles.bottomCopy}>
+                <Text style={styles.bottomText}>
+                  {isSignup ? "Already have an account?" : "Don't have an account?"}
+                </Text>
+                <Link href={isSignup ? "/login" : "/signup"} style={styles.bottomLink}>
+                  {isSignup ? "Sign in" : "Sign up"}
+                </Link>
+              </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -294,6 +298,13 @@ export const AuthScreen = ({ mode }: AuthScreenProps) => {
     </LinearGradient>
   );
 };
+
+const SecurityNotice = () => (
+  <View style={styles.securityNotice}>
+    <LockKeyhole color={colors.accent} size={12} strokeWidth={2.5} />
+    <Text style={styles.securityText}>Secured with bank-grade encryption</Text>
+  </View>
+);
 
 type AuthFieldProps = {
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
@@ -554,14 +565,36 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl
+    paddingBottom: spacing.xl,
+    justifyContent: "space-between"
   },
   signupContent: {
-    paddingTop: spacing.sm
+    paddingTop: spacing.xs
   },
   loginContent: {
+    paddingTop: spacing.xs
+  },
+  topSection: {
+    width: "100%",
+    alignItems: "center"
+  },
+  bottomContainer: {
+    width: "100%",
+    gap: spacing.lg,
+    marginTop: spacing.sm
+  },
+  securityNotice: {
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
-    paddingTop: spacing.sm
+    gap: 6,
+    marginTop: spacing.xs,
+    opacity: 0.9
+  },
+  securityText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600"
   },
   statusBar: {
     minHeight: 30,
