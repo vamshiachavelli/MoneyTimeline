@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MoneyTimeline Launch Assets</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #05080d;
+        --panel: #0b111a;
+        --surface: #111923;
+        --border: #253242;
+        --text: #f7fafc;
+        --muted: #aab7c6;
+        --accent: #43d88b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 50% 18%, rgba(67, 216, 139, 0.10), transparent 30rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 36px 0 52px;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 28px;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      .accent {
+        color: var(--accent);
+      }
+
+      .subtitle {
+        max-width: 620px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.5;
+        margin-top: 12px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 380px) minmax(280px, 380px) minmax(300px, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid rgba(37, 50, 66, 0.9);
+        background: rgba(11, 17, 26, 0.78);
+        border-radius: 18px;
+        padding: 18px;
+      }
+
+      .panel h2 {
+        margin: 0 0 14px;
+        font-size: 15px;
+        line-height: 1.2;
+        color: var(--muted);
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .icon-stage {
+        display: grid;
+        place-items: center;
+        min-height: 344px;
+        border-radius: 14px;
+        background:
+          linear-gradient(45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
+          linear-gradient(-45deg, rgba(255,255,255,0.035) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.035) 75%),
+          linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.035) 75%),
+          #070b11;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+        background-size: 20px 20px;
+      }
+
+      .icon {
+        width: min(76%, 278px);
+        height: auto;
+        filter: drop-shadow(0 24px 55px rgba(67, 216, 139, 0.16));
+      }
+
+      .adaptive-bg {
+        width: min(76%, 278px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        border-radius: 62px;
+        background: var(--bg);
+        box-shadow: 0 24px 55px rgba(67, 216, 139, 0.16);
+      }
+
+      .adaptive-bg img {
+        width: 100%;
+        height: auto;
+      }
+
+      .splash-stage {
+        display: grid;
+        place-items: center;
+        min-height: 720px;
+        border-radius: 14px;
+        background: #02050a;
+      }
+
+      .splash {
+        width: min(100%, 370px);
+        height: auto;
+        border-radius: 28px;
+        box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+      }
+
+      .meta {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 980px) {
+        header {
+          display: block;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .splash-stage {
+          min-height: auto;
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Money<span class="accent">Timeline</span> Launch Assets</h1>
+          <p class="subtitle">Local preview of the exact Expo assets wired in app.json: launcher icon, Android adaptive foreground, and splash screen.</p>
+        </div>
+      </header>
+
+      <section class="grid" aria-label="MoneyTimeline launch asset previews">
+        <article class="panel">
+          <h2>App Icon</h2>
+          <div class="icon-stage">
+            <img class="icon" src="./icon.png" alt="MoneyTimeline app icon" />
+          </div>
+          <p class="meta">assets/icon.png · 1024x1024</p>
+        </article>
+
+        <article class="panel">
+          <h2>Android Adaptive Icon</h2>
+          <div class="icon-stage">
+            <div class="adaptive-bg">
+              <img src="./adaptive-icon.png" alt="MoneyTimeline adaptive icon foreground on dark background" />
+            </div>
+          </div>
+          <p class="meta">assets/adaptive-icon.png · foreground over #05080D</p>
+        </article>
+
+        <article class="panel">
+          <h2>Splash Screen</h2>
+          <div class="splash-stage">
+            <img class="splash" src="./splash.png" alt="MoneyTimeline splash screen" />
+          </div>
+          <p class="meta">assets/splash.png · 1242x2436 · resizeMode contain</p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
