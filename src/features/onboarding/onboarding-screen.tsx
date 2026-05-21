@@ -329,9 +329,7 @@ const OnboardingSlide = ({ active, phoneWidth, slide, width }: OnboardingSlidePr
       <PhoneMockup
         variant={slide.id}
         width={
-          slide.id === "calendar"
-            ? phoneWidth * 0.95
-            : slide.id === "classify"
+          slide.id === "calendar" || slide.id === "classify"
               ? phoneWidth * 0.9
               : phoneWidth
         }
@@ -341,7 +339,7 @@ const OnboardingSlide = ({ active, phoneWidth, slide, width }: OnboardingSlidePr
 );
 
 const PhoneMockup = ({ variant, width }: { variant: SlideId; width: number }) => {
-  const height = width * (variant === "calendar" ? 1.46 : variant === "classify" ? 1.68 : 1.5);
+  const height = width * (variant === "calendar" || variant === "classify" ? 1.68 : 1.5);
 
   return (
     <View style={[styles.phoneFrame, { width, height }]}>
@@ -351,6 +349,7 @@ const PhoneMockup = ({ variant, width }: { variant: SlideId; width: number }) =>
         colors={["#111923", "#02070B"]}
         style={[
           styles.phoneScreen,
+          variant === "calendar" && styles.calendarPhoneScreen,
           variant === "classify" && styles.classifyPhoneScreen,
           { borderRadius: width * 0.13 }
         ]}
@@ -367,12 +366,6 @@ const PhoneMockup = ({ variant, width }: { variant: SlideId; width: number }) =>
         {variant === "split" ? <SplitMockup /> : null}
         {variant === "memory" ? <MemoryMockup /> : null}
       </LinearGradient>
-      {variant === "calendar" ? (
-        <>
-          <FloatingPill amount="$332" context="calendar" side="left" tone="green" />
-          <FloatingPill amount="$120" context="calendar" side="right" tone="green" />
-        </>
-      ) : null}
       {variant === "classify" ? (
         <>
           <ArrowLeft color={colors.accent} size={28} style={styles.leftArrow} />
@@ -425,57 +418,71 @@ const CalendarMockup = () => {
 
   return (
     <View style={styles.calendarMockup}>
-      <View style={styles.notch} />
-      <View style={styles.calendarStatus}>
-        <Text style={styles.calendarMonth}>MAY</Text>
-        <View style={styles.statusRight}>
-          <View style={styles.signalBars}>
-            <View style={[styles.signalBar, { height: 7 }]} />
-            <View style={[styles.signalBar, { height: 11 }]} />
-            <View style={[styles.signalBar, { height: 15 }]} />
-          </View>
-          <View style={styles.calendarWifi} />
-          <View style={styles.calendarBattery}>
-            <View style={styles.batteryFill} />
-          </View>
+      <PhoneStatusBar />
+      <PhoneHeader />
+
+      <View style={styles.dayCard}>
+        <View>
+          <Text style={styles.phoneTitle}>May 2026</Text>
+          <Text style={styles.phoneSubtle}>Net +$452 - 8 money moments</Text>
+        </View>
+        <SlidersHorizontal color={colors.textSecondary} size={20} />
+      </View>
+
+      <View style={styles.calendarPanel}>
+        <View style={styles.calendarWeekdays}>
+          {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
+            <Text key={`${day}-${index}`} style={styles.calendarWeekday}>
+              {day}
+            </Text>
+          ))}
+        </View>
+
+        <View style={styles.calendarGrid}>
+          {days.map((day, index) => {
+            const Icon = day.icon;
+
+            return (
+              <View key={`${day.label}-${index}`} style={styles.calendarDayCell}>
+                {Icon ? (
+                  <LinearGradient
+                    colors={[day.color, `${day.color}B8`]}
+                    style={styles.calendarIconDay}
+                  >
+                    <Icon color={colors.textPrimary} size={16} strokeWidth={2.8} />
+                  </LinearGradient>
+                ) : (
+                  <View
+                    style={[
+                      styles.calendarDateBubble,
+                      day.active && styles.calendarActiveDate,
+                      day.activeFill && styles.calendarFilledDate
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.calendarDateText,
+                        day.active && styles.calendarActiveText,
+                        day.activeFill && styles.calendarFilledDateText,
+                        day.muted && styles.calendarMutedText
+                      ]}
+                    >
+                      {day.label}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </View>
       </View>
 
-      <View style={styles.calendarWeekdays}>
-        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-          <Text key={`${day}-${index}`} style={styles.calendarWeekday}>
-            {day}
-          </Text>
-        ))}
-      </View>
-
-      <View style={styles.calendarGrid}>
-        {days.map((day, index) => {
-          const Icon = day.icon;
-
-          return (
-            <View key={`${day.label}-${index}`} style={styles.calendarDayCell}>
-              {Icon ? (
-                <View style={[styles.calendarIconDay, { backgroundColor: day.color }]}>
-                  <Icon color={colors.textPrimary} size={16} strokeWidth={2.7} />
-                </View>
-              ) : (
-                <View style={[styles.calendarDateBubble, day.activeFill && styles.calendarFilledDate]}>
-                  <Text
-                    style={[
-                      styles.calendarDateText,
-                      day.active && styles.calendarActiveText,
-                      day.activeFill && styles.calendarFilledDateText,
-                      day.muted && styles.calendarMutedText
-                    ]}
-                  >
-                    {day.label}
-                  </Text>
-                </View>
-              )}
-            </View>
-          );
-        })}
+      <View style={styles.calendarBottomNav}>
+        <MiniTab active icon={CalendarDays} label="Calendar" />
+        <MiniTab icon={Clock3} label="Timeline" />
+        <MiniTab icon={UsersRound} label="Shared" />
+        <MiniTab icon={ChartNoAxesColumn} label="Insights" />
+        <MiniTab icon={Settings} label="Settings" />
       </View>
     </View>
   );
@@ -628,7 +635,6 @@ const SplitMockup = () => (
 const MemoryMockup = () => (
   <View style={styles.memoryContent}>
     <Text style={styles.memoryMonth}>May 2026</Text>
-    <View style={styles.timelineRail} />
     {[
       {
         amount: "-$332.10",
@@ -972,9 +978,9 @@ const styles = StyleSheet.create({
     paddingBottom: 154
   },
   calendarMockupWrap: {
-    justifyContent: "flex-start",
-    paddingTop: spacing.xl,
-    paddingBottom: 148
+    justifyContent: "center",
+    paddingTop: 0,
+    paddingBottom: 154
   },
   phoneFrame: {
     borderRadius: 44,
@@ -1010,6 +1016,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.08)",
     padding: spacing.lg
+  },
+  calendarPhoneScreen: {
+    padding: spacing.md
   },
   classifyPhoneScreen: {
     overflow: "visible",
@@ -1092,52 +1101,38 @@ const styles = StyleSheet.create({
   },
   calendarMockup: {
     flex: 1,
-    padding: spacing.lg,
-    paddingTop: spacing.xl
+    gap: spacing.sm,
+    paddingBottom: 62
   },
-  notch: {
+  calendarPanel: {
+    flex: 1,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    backgroundColor: "rgba(17, 25, 35, 0.72)",
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm
+  },
+  calendarBottomNav: {
     position: "absolute",
-    top: 0,
-    left: "29%",
-    width: "42%",
-    height: 32,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    backgroundColor: "#070A0F"
-  },
-  calendarStatus: {
+    right: -spacing.md,
+    bottom: 0,
+    left: -spacing.md,
+    height: 58,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: spacing.sm
-  },
-  calendarMonth: {
-    color: colors.textPrimary,
-    fontSize: 19,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 25
-  },
-  calendarWifi: {
-    width: 14,
-    height: 14,
-    borderTopWidth: 4,
-    borderColor: colors.textPrimary,
-    borderRadius: 7
-  },
-  calendarBattery: {
-    width: 24,
-    height: 12,
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.textPrimary,
-    borderRadius: 3,
-    padding: 2
+    justifyContent: "space-around",
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
+    backgroundColor: "rgba(5, 8, 13, 0.94)",
+    paddingHorizontal: spacing.xs,
+    paddingTop: 4,
+    paddingBottom: 7
   },
   calendarWeekdays: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: spacing.xl,
     paddingHorizontal: spacing.xs
   },
   calendarWeekday: {
@@ -1149,11 +1144,11 @@ const styles = StyleSheet.create({
   calendarGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginTop: spacing.md
+    marginTop: spacing.xs
   },
   calendarDayCell: {
     width: "14.285%",
-    height: 42,
+    height: 35,
     alignItems: "center",
     justifyContent: "center"
   },
@@ -1165,7 +1160,16 @@ const styles = StyleSheet.create({
     borderRadius: 15
   },
   calendarFilledDate: {
-    backgroundColor: colors.accent
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.26,
+    shadowRadius: 10
+  },
+  calendarActiveDate: {
+    borderWidth: 1,
+    borderColor: "rgba(67, 216, 139, 0.42)",
+    backgroundColor: "rgba(67, 216, 139, 0.10)"
   },
   calendarDateText: {
     color: "#AAB4C1",
@@ -1183,15 +1187,17 @@ const styles = StyleSheet.create({
     color: "#4D5867"
   },
   calendarIconDay: {
-    width: 34,
-    height: 34,
+    width: 31,
+    height: 31,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 17,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.24,
-    shadowRadius: 10
+    shadowOpacity: 0.28,
+    shadowRadius: 11
   },
   phoneTitle: {
     color: colors.textPrimary,
@@ -1319,7 +1325,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    backgroundColor: "rgba(23, 34, 49, 0.96)"
+    backgroundColor: "rgba(23, 34, 49, 0.96)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18
   },
   floatingCalendarLeft: {
     left: -16,
@@ -1475,19 +1485,22 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm
   },
   miniTab: {
-    minWidth: 42,
+    minWidth: 39,
     alignItems: "center",
-    gap: 3,
+    justifyContent: "center",
+    gap: 2,
     borderRadius: radii.md,
-    paddingVertical: spacing.xs
+    paddingHorizontal: 3,
+    paddingVertical: 5
   },
   miniTabActive: {
     backgroundColor: "rgba(246, 166, 59, 0.12)"
   },
   miniTabText: {
     color: colors.textMuted,
-    fontSize: 7,
-    fontWeight: "700"
+    fontSize: 6,
+    fontWeight: "800",
+    lineHeight: 8
   },
   miniTabTextActive: {
     color: colors.warning
