@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "MoneyTimeline",
+    "slug": "moneytimeline",
+    "scheme": "moneytimeline",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#05080D",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.moneytimeline.app"
+    },
+    "android": {
+      "package": "com.moneytimeline.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#05080D"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "supabaseUrl": "$EXPO_PUBLIC_SUPABASE_URL",
+      "supabaseAnonKey": "$EXPO_PUBLIC_SUPABASE_ANON_KEY"
+    }
+  }
+}

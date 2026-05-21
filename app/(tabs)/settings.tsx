@@ -1,0 +1,926 @@
+import { LinearGradient } from "expo-linear-gradient";
+import { type Href, useRouter } from "expo-router";
+import {
+  Bell,
+  ChartNoAxesColumn,
+  ChevronRight,
+  CircleHelp,
+  Clock3,
+  Download,
+  Landmark,
+  LockKeyhole,
+  LogOut,
+  Palette,
+  ShieldAlert,
+  Trash2,
+  UploadCloud,
+  UsersRound
+} from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { useAccountsStore } from "@/features/accounts/account-store";
+import { authService } from "@/features/auth/auth-service";
+import { useAuth } from "@/features/auth/auth-provider";
+import {
+  getSavedImportBatches,
+  type SavedImportBatch
+} from "@/features/import/import-save-service";
+import {
+  getAccentOption,
+  getAppIconOption,
+  getThemePalette,
+  getThemeOption,
+  useAppearanceSettingsStore
+} from "@/features/settings/appearance-store";
+import {
+  getProfileDisplayEmail,
+  getProfileDisplayName,
+  getProfileInitials,
+  useProfileSettingsStore
+} from "@/features/settings/profile-store";
+import {
+  formatCurrency,
+  useLedgerTransactions
+} from "@/features/transactions/transaction-ledger";
+import { withReturnTo } from "@/navigation/return-target";
+import { colors, radii, spacing } from "@/styles/theme";
+
+type SettingRowProps = {
+  color: string;
+  icon: typeof Palette;
+  route?: Href;
+  subtitle: string;
+  title: string;
+};
+
+const rows: SettingRowProps[] = [
+  {
+    color: "#16A34A",
+    icon: Palette,
+    route: "/appearance",
+    subtitle: "Dark mode, accent color, app icon",
+    title: "Appearance"
+  },
+  {
+    color: "#2563EB",
+    icon: Landmark,
+    route: "/accounts",
+    subtitle: "Connected banks and wallets",
+    title: "Accounts"
+  },
+  {
+    color: "#F97316",
+    icon: Bell,
+    subtitle: "Reminders, recaps, and alerts",
+    title: "Notifications"
+  },
+  {
+    color: "#A855F7",
+    icon: LockKeyhole,
+    subtitle: "Face ID, auto-lock, data controls",
+    title: "Privacy & Security"
+  },
+  {
+    color: "#D99A10",
+    icon: UploadCloud,
+    route: "/import",
+    subtitle: "Import history, auto-merge, parsing",
+    title: "Data & Import"
+  },
+  {
+    color: "#C344E6",
+    icon: UsersRound,
+    route: "/groups",
+    subtitle: "Groups, people, and connections",
+    title: "Groups & Friends"
+  },
+  {
+    color: colors.accentStrong,
+    icon: ChartNoAxesColumn,
+    route: "/insights",
+    subtitle: "Preferences, alerts, budget tracking",
+    title: "Insights"
+  },
+  {
+    color: "#2563EB",
+    icon: CircleHelp,
+    subtitle: "Help center, feedback, rate app",
+    title: "Support"
+  }
+];
+
+const currentMonthKey = (() => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+})();
+
+const toTitleName = (value: string) =>
+  value
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+
+const getProfileName = (email: string, metadataName?: unknown) => {
+  if (typeof metadataName === "string" && metadataName.trim()) {
+    return metadataName.trim();
+  }
+
+  const localPart = email.split("@")[0] ?? "";
+  return toTitleName(localPart) || "User";
+};
+
+export default function SettingsScreen() {
+  const router = useRouter();
+  const { isConfigured, user } = useAuth();
+  const accounts = useAccountsStore((state) => state.accounts);
+  const loadAccounts = useAccountsStore((state) => state.loadAccounts);
+  const ledgerTransactions = useLedgerTransactions();
+  const appearance = useAppearanceSettingsStore((state) => state.appearance);
+  const loadAppearance = useAppearanceSettingsStore((state) => state.loadAppearance);
+  const profile = useProfileSettingsStore((state) => state.profile);
+  const loadProfile = useProfileSettingsStore((state) => state.loadProfile);
+  const [importBatches, setImportBatches] = useState<SavedImportBatch[]>([]);
+  const [isLoadingImports, setIsLoadingImports] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    void loadAccounts();
+    void loadAppearance();
+    void loadProfile();
+  }, [loadAccounts, loadAppearance, loadProfile]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    getSavedImportBatches()
+      .then((batches) => {
+        if (isMounted) {
+          setImportBatches(batches);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setImportBatches([]);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingImports(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeout = setTimeout(() => setNotice(""), 3600);
+
+    return () => clearTimeout(timeout);
+  }, [notice]);
+
+  const fallbackEmail = user?.email ?? "arjun.mehta@gmail.com";
+  const fallbackProfileName = getProfileName(fallbackEmail, user?.user_metadata?.full_name);
+  const profileEmail = getProfileDisplayEmail(profile, fallbackEmail);
+  const profileName = getProfileDisplayName(profile, fallbackProfileName);
+  const profileInitials = getProfileInitials(profileName);
+  const appearanceAccent = useMemo(
+    () => getAccentOption(appearance.accent),
+    [appearance.accent]
+  );
+  const appearanceTheme = useMemo(
+    () => getThemeOption(appearance.theme),
+    [appearance.theme]
+  );
+  const appearancePalette = useMemo(
+    () => getThemePalette(appearance.theme),
+    [appearance.theme]
+  );
+  const appearanceIcon = useMemo(
+    () => getAppIconOption(appearance.appIcon),
+    [appearance.appIcon]
+  );
+  const settingsRows = useMemo(
+    () =>
+      rows.map((row) =>
+        row.title === "Appearance"
+          ? {
+              ...row,
+              color: appearanceAccent.color,
+              subtitle: `${appearanceAccent.label} accent, ${appearanceTheme.label}, ${appearanceIcon.label} icon`
+            }
+          : row.title === "Insights"
+            ? {
+                ...row,
+                color: appearanceAccent.color
+              }
+            : row
+      ),
+    [
+      appearanceAccent.color,
+      appearanceAccent.label,
+      appearanceIcon.label,
+      appearanceTheme.label
+    ]
+  );
+  const monthTransactions = useMemo(
+    () => ledgerTransactions.filter((transaction) => transaction.date.startsWith(currentMonthKey)),
+    [ledgerTransactions]
+  );
+  const monthSpent = useMemo(
+    () => monthTransactions.reduce((sum, transaction) => sum + transaction.amount, 0),
+    [monthTransactions]
+  );
+  const totalImportedTransactions = useMemo(
+    () =>
+      importBatches.reduce((sum, batch) => sum + batch.transactions.length, 0),
+    [importBatches]
+  );
+  const latestImport = importBatches[0] ?? null;
+
+  const showPlaceholderNotice = (feature: string) => {
+    setNotice(`${feature} is ready as a placeholder. Full controls arrive after MVP.`);
+  };
+
+  const handleLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+
+    try {
+      if (user && isConfigured) {
+        await authService.signOut();
+      }
+
+      router.replace("/login");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  const handleDangerZone = () => {
+    setNotice("Danger Zone is protected for Part 2 so data cannot be deleted by accident.");
+  };
+
+  return (
+    <LinearGradient colors={appearancePalette.gradient} style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <PhoneStatus />
+          <Text style={styles.title}>Settings</Text>
+
+          <View style={[styles.profileCard, { backgroundColor: appearancePalette.cardStrong }]}>
+            <View style={styles.profileTop}>
+              <LinearGradient
+                colors={[appearanceAccent.color, appearanceAccent.strong]}
+                style={styles.avatarRing}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{profileInitials}</Text>
+                </View>
+              </LinearGradient>
+
+              <View style={styles.profileText}>
+                <Text style={styles.profileName}>{profileName}</Text>
+                <Text numberOfLines={1} style={styles.profileEmail}>
+                  {profileEmail}
+                </Text>
+              </View>
+
+              <Pressable
+                accessibilityLabel="Edit profile"
+                accessibilityRole="button"
+                onPress={() => router.push(withReturnTo("/profile", "settings"))}
+                style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.editText}>Edit Profile</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.cardDivider} />
+
+            <View style={styles.monthRow}>
+              <View>
+                <Text style={styles.monthLabel}>This month</Text>
+                <Text style={styles.monthValue}>{formatCurrency(monthSpent)} <Text style={styles.monthSmall}>spent</Text></Text>
+              </View>
+              <Sparkline color={appearanceAccent.color} />
+              <View style={styles.percentBlock}>
+                <Text style={[styles.percent, { color: appearanceAccent.color }]}>12%</Text>
+                <Text style={styles.percentSub}>vs last month</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.rowsCard, { backgroundColor: appearancePalette.card }]}>
+            {settingsRows.map((row, index) => {
+              const route = row.route;
+
+              return (
+                <SettingRow
+                  key={row.title}
+                  {...row}
+                  isLast={index === rows.length - 1}
+                  onPress={
+                    route
+                      ? () => router.push(withReturnTo(String(route), "settings"))
+                      : () => showPlaceholderNotice(row.title)
+                  }
+                />
+              );
+            })}
+          </View>
+
+          {notice ? (
+            <View
+              style={[
+                styles.noticeBanner,
+                {
+                  backgroundColor: appearanceAccent.soft,
+                  borderColor: `${appearanceAccent.color}33`
+                }
+              ]}
+            >
+              <ShieldAlert color={appearanceAccent.color} size={17} strokeWidth={2.5} />
+              <Text style={[styles.noticeText, { color: appearanceAccent.color }]}>{notice}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.dataSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Data workspace</Text>
+              <Text style={[styles.sectionMeta, { color: appearanceAccent.color }]}>
+                {accounts.length} accounts
+              </Text>
+            </View>
+
+            <View style={styles.dataGrid}>
+              <DataActionCard
+                accent="#7FA7FF"
+                icon={Clock3}
+                meta={
+                  latestImport
+                    ? `${latestImport.fileName} - ${latestImport.transactions.length} rows`
+                    : isLoadingImports
+                      ? "Checking saved imports"
+                      : "No statements imported yet"
+                }
+                onPress={() => router.push(withReturnTo("/import", "settings"))}
+                title="Import history"
+                value={`${importBatches.length} statements`}
+              />
+              <DataActionCard
+                accent={appearanceAccent.color}
+                icon={Download}
+                meta={`${totalImportedTransactions} imported rows ready for future export`}
+                onPress={() => showPlaceholderNotice("Export data")}
+                title="Export data"
+                value="CSV export"
+              />
+            </View>
+          </View>
+
+          <Pressable
+            accessibilityLabel="Log out"
+            accessibilityRole="button"
+            disabled={isLoggingOut}
+            onPress={handleLogout}
+            style={({ pressed }) => [styles.logoutRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.rowIcon, styles.logoutIcon]}>
+              <LogOut color={colors.textPrimary} size={20} strokeWidth={2.5} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={styles.logoutTitle}>{isLoggingOut ? "Logging out" : "Logout"}</Text>
+              <Text style={styles.rowSubtitle}>Return to the secure sign-in screen</Text>
+            </View>
+            <ChevronRight color={colors.textSecondary} size={20} />
+          </Pressable>
+
+          <Pressable
+            accessibilityLabel="Danger Zone"
+            accessibilityRole="button"
+            onPress={handleDangerZone}
+            style={({ pressed }) => [styles.dangerRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.rowIcon, styles.dangerIcon]}>
+              <Trash2 color="#FF4F4F" size={21} strokeWidth={2.4} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={styles.dangerTitle}>Danger Zone</Text>
+              <Text style={styles.rowSubtitle}>Delete data, reset or delete account</Text>
+            </View>
+            <ChevronRight color={colors.textSecondary} size={20} />
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
+  );
+}
+
+const PhoneStatus = () => (
+  <View style={styles.statusBar}>
+    <Text style={styles.statusTime}>9:41</Text>
+    <View style={styles.statusRight}>
+      <View style={styles.signalBars}>
+        <View style={[styles.signalBar, { height: 7 }]} />
+        <View style={[styles.signalBar, { height: 10 }]} />
+        <View style={[styles.signalBar, { height: 13 }]} />
+      </View>
+      <View style={styles.wifi} />
+      <View style={styles.battery}>
+        <View style={styles.batteryFill} />
+      </View>
+    </View>
+  </View>
+);
+
+const SettingRow = ({
+  color,
+  icon: Icon,
+  isLast,
+  onPress,
+  subtitle,
+  title
+}: SettingRowProps & { isLast?: boolean; onPress?: () => void }) => (
+  <Pressable
+    accessibilityLabel={title}
+    accessibilityRole="button"
+    disabled={!onPress}
+    onPress={onPress}
+    style={({ pressed }) => [styles.row, isLast && styles.rowLast, pressed && styles.pressed]}
+  >
+    <View style={[styles.rowIcon, { backgroundColor: `${color}24` }]}>
+      <Icon color={color} size={22} strokeWidth={2.5} />
+    </View>
+    <View style={styles.rowText}>
+      <Text style={styles.rowTitle}>{title}</Text>
+      <Text style={styles.rowSubtitle}>{subtitle}</Text>
+    </View>
+    <ChevronRight color={colors.textSecondary} size={20} />
+  </Pressable>
+);
+
+const DataActionCard = ({
+  accent,
+  icon: Icon,
+  meta,
+  onPress,
+  title,
+  value
+}: {
+  accent: string;
+  icon: typeof Palette;
+  meta: string;
+  onPress: () => void;
+  title: string;
+  value: string;
+}) => (
+  <Pressable
+    accessibilityLabel={title}
+    accessibilityRole="button"
+    onPress={onPress}
+    style={({ pressed }) => [styles.dataCard, pressed && styles.pressed]}
+  >
+    <View style={[styles.dataIcon, { backgroundColor: `${accent}22` }]}>
+      <Icon color={accent} size={21} strokeWidth={2.5} />
+    </View>
+    <View style={styles.dataCopy}>
+      <Text style={styles.dataTitle}>{title}</Text>
+      <Text style={styles.dataValue}>{value}</Text>
+      <Text numberOfLines={2} style={styles.dataMeta}>
+        {meta}
+      </Text>
+    </View>
+  </Pressable>
+);
+
+const Sparkline = ({ color }: { color: string }) => (
+  <View style={styles.sparkline}>
+    <View style={[styles.sparkSegment, styles.sparkOne, { backgroundColor: color }]} />
+    <View style={[styles.sparkSegment, styles.sparkTwo, { backgroundColor: color }]} />
+    <View style={[styles.sparkSegment, styles.sparkThree, { backgroundColor: color }]} />
+    <View style={[styles.sparkSegment, styles.sparkFour, { backgroundColor: color }]} />
+    <View style={[styles.sparkSegment, styles.sparkFive, { backgroundColor: color }]} />
+    <View style={[styles.sparkSegment, styles.sparkSix, { backgroundColor: color }]} />
+  </View>
+);
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background
+  },
+  safeArea: {
+    flex: 1
+  },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 118
+  },
+  statusBar: {
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs
+  },
+  statusTime: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "800"
+  },
+  statusRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6
+  },
+  signalBars: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 2
+  },
+  signalBar: {
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: colors.textPrimary
+  },
+  wifi: {
+    width: 13,
+    height: 13,
+    borderTopWidth: 3,
+    borderColor: colors.textPrimary,
+    borderRadius: 7
+  },
+  battery: {
+    width: 24,
+    height: 12,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.textPrimary,
+    borderRadius: 3,
+    padding: 2
+  },
+  batteryFill: {
+    flex: 1,
+    borderRadius: 2,
+    backgroundColor: colors.textPrimary
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 27,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 34,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md
+  },
+  profileCard: {
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(14, 21, 31, 0.88)",
+    padding: spacing.md
+  },
+  profileTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md
+  },
+  avatarRing: {
+    width: 56,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 28
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 24,
+    backgroundColor: "#172231"
+  },
+  avatarText: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  profileText: {
+    minWidth: 0,
+    flex: 1
+  },
+  profileName: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 22
+  },
+  profileEmail: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17
+  },
+  editButton: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  editText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginVertical: spacing.sm
+  },
+  monthRow: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md
+  },
+  monthLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17
+  },
+  monthValue: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 23
+  },
+  monthSmall: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500"
+  },
+  sparkline: {
+    height: 54,
+    flex: 1,
+    position: "relative"
+  },
+  sparkSegment: {
+    position: "absolute",
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.accent
+  },
+  sparkOne: {
+    left: 2,
+    top: 42,
+    width: 20,
+    transform: [{ rotate: "-18deg" }]
+  },
+  sparkTwo: {
+    left: 19,
+    top: 37,
+    width: 20,
+    transform: [{ rotate: "12deg" }]
+  },
+  sparkThree: {
+    left: 36,
+    top: 36,
+    width: 23,
+    transform: [{ rotate: "-22deg" }]
+  },
+  sparkFour: {
+    left: 56,
+    top: 29,
+    width: 20,
+    transform: [{ rotate: "13deg" }]
+  },
+  sparkFive: {
+    left: 73,
+    top: 26,
+    width: 24,
+    transform: [{ rotate: "-28deg" }]
+  },
+  sparkSix: {
+    left: 92,
+    top: 17,
+    width: 24,
+    transform: [{ rotate: "-12deg" }]
+  },
+  percentBlock: {
+    width: 52
+  },
+  percent: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 21
+  },
+  percentSub: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "600",
+    lineHeight: 13
+  },
+  rowsCard: {
+    overflow: "hidden",
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(14, 21, 31, 0.82)",
+    marginTop: spacing.sm
+  },
+  row: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.07)",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4
+  },
+  rowLast: {
+    borderBottomWidth: 0
+  },
+  rowIcon: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 16
+  },
+  rowText: {
+    minWidth: 0,
+    flex: 1
+  },
+  rowTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17
+  },
+  rowSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "600",
+    lineHeight: 15
+  },
+  noticeBanner: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(67, 216, 139, 0.2)",
+    backgroundColor: colors.accentSoft,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  noticeText: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16
+  },
+  dataSection: {
+    marginTop: spacing.md
+  },
+  sectionHeader: {
+    minHeight: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.xs
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  sectionMeta: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 16
+  },
+  dataGrid: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  dataCard: {
+    minHeight: 132,
+    flex: 1,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(14, 21, 31, 0.82)",
+    padding: spacing.md
+  },
+  dataIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 17,
+    marginBottom: spacing.md
+  },
+  dataCopy: {
+    minWidth: 0,
+    flex: 1
+  },
+  dataTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17
+  },
+  dataValue: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 22,
+    marginTop: 2
+  },
+  dataMeta: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: "600",
+    lineHeight: 14,
+    marginTop: spacing.xs
+  },
+  logoutRow: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  logoutIcon: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)"
+  },
+  logoutTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
+  },
+  dangerRow: {
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 79, 79, 0.2)",
+    backgroundColor: "rgba(255, 79, 79, 0.1)",
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  dangerIcon: {
+    backgroundColor: "rgba(255, 79, 79, 0.14)"
+  },
+  dangerTitle: {
+    color: "#FF4F4F",
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
+  },
+  pressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.98 }]
+  }
+});
