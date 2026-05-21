@@ -19,7 +19,6 @@ import {
   SlidersHorizontal,
   ShoppingCart,
   Target,
-  TrendingUp,
   UserRound,
   UsersRound,
   Utensils,
@@ -30,6 +29,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -500,9 +500,11 @@ const PhoneStatusBar = () => (
 
 const PhoneHeader = () => (
   <View style={styles.phoneHeader}>
-    <View style={styles.phoneLogo}>
-      <TrendingUp color={colors.accent} size={18} strokeWidth={2.8} />
-    </View>
+    <Image
+      accessibilityIgnoresInvertColors
+      source={require("../../../assets/adaptive-icon.png")}
+      style={styles.phoneLogo}
+    />
     <Text style={styles.phoneBrand}>
       Money<Text style={styles.greenText}>Timeline</Text>
     </Text>
@@ -1072,11 +1074,10 @@ const styles = StyleSheet.create({
   phoneLogo: {
     width: 32,
     height: 32,
-    alignItems: "center",
-    justifyContent: "center",
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: colors.accent
+    borderWidth: 1,
+    borderColor: "rgba(67, 216, 139, 0.34)",
+    backgroundColor: "rgba(67, 216, 139, 0.08)"
   },
   phoneBrand: {
     flex: 1,
@@ -1651,17 +1652,19 @@ const styles = StyleSheet.create({
   },
   dots: {
     flexDirection: "row",
-    gap: spacing.md
+    alignItems: "center",
+    gap: spacing.sm
   },
   dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6
+    height: 10,
+    borderRadius: 5
   },
   dotActive: {
+    width: 28,
     backgroundColor: colors.accent
   },
   dotInactive: {
+    width: 10,
     backgroundColor: "rgba(255, 255, 255, 0.22)"
   },
   ctaPressable: {
