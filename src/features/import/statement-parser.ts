@@ -11,6 +11,8 @@ export type ParserAccount = {
   name: string;
 };
 
+export type ParsedTransactionKind = "expense" | "income" | "payment" | "transfer";
+
 export type ParsedTransactionDraft = {
   accountId: string;
   accountName: string;
@@ -19,6 +21,7 @@ export type ParsedTransactionDraft = {
   date: string;
   description: string | null;
   duplicateHash: string;
+  kind: ParsedTransactionKind;
   merchant: string;
   raw: Record<string, string>;
   rowNumber: number;
@@ -420,7 +423,9 @@ const normalizeTransactionRow = (
   const description = descriptionValue && descriptionValue !== merchantValue
     ? descriptionValue.trim()
     : null;
-  const category = pickValue(row.data, headerMap.category) || null;
+  const descriptor = `${merchant} ${description ?? ""}`;
+  const kind = inferTransactionKind(descriptor, amountValue);
+  const category = pickValue(row.data, headerMap.category) || inferCategoryForKind(kind);
   const duplicateHash = createTransactionDuplicateHash({
     accountId: account.id,
     amount: amountValue,
@@ -436,6 +441,7 @@ const normalizeTransactionRow = (
     date,
     description,
     duplicateHash,
+    kind,
     merchant,
     raw: row.data,
     rowNumber: row.rowNumber
@@ -493,7 +499,40 @@ const parseMoney = (value: string) => {
 };
 
 const isCreditLike = (descriptor: string) =>
-  /payment|refund|credit|reversal|cashback|deposit/i.test(descriptor);
+  /payroll|deposit|refund|credit|reversal|cashback|zelle payment from|mobile payment - thank you|ach deposit|internet transfer from/i.test(
+    descriptor
+  );
+
+const inferTransactionKind = (
+  descriptor: string,
+  amount: number
+): ParsedTransactionKind => {
+  if (/mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|credit card payment|card payment|autopay|online payment|payment to/i.test(descriptor)) {
+    return "payment";
+  }
+
+  if (/transfer (to|from)|internet transfer|external transfer|account transfer/i.test(descriptor)) {
+    return "transfer";
+  }
+
+  if (amount < 0 || /payroll|deposit|zelle payment from|refund|credit/i.test(descriptor)) {
+    return "income";
+  }
+
+  return "expense";
+};
+
+const inferCategoryForKind = (kind: ParsedTransactionKind) => {
+  if (kind === "payment" || kind === "transfer") {
+    return "Payments / Transfers";
+  }
+
+  if (kind === "income") {
+    return "Income";
+  }
+
+  return null;
+};
 
 const parseDate = (value: string) => {
   const trimmed = value.trim();

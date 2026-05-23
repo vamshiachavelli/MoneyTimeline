@@ -2,7 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 
+import { useAuth } from "@/features/auth/auth-provider";
+import { transactionService } from "@/services/supabase/transaction-service";
+import type { Json, Transaction as DatabaseTransaction } from "@/types/database";
+
 export type Classification = "personal" | "shared" | "unclassified";
+export type TransactionKind = "expense" | "income" | "payment" | "transfer";
 
 export type Transaction = {
   account: string;
@@ -14,6 +19,7 @@ export type Transaction = {
   description: string;
   duplicateHash: string;
   id: string;
+  kind: TransactionKind;
   merchant: string;
   splitConnection: string | null;
   time: string;
@@ -29,6 +35,7 @@ export type TransactionPatch = Partial<
     | "classification"
     | "date"
     | "description"
+    | "kind"
     | "merchant"
     | "splitConnection"
     | "time"
@@ -40,6 +47,10 @@ export type TransactionPatch = Partial<
 type LedgerState = {
   hasLoaded: boolean;
   loadLedger: () => Promise<void>;
+  loadRemoteTransactions: (userId: string) => Promise<void>;
+  remoteError: string | null;
+  remoteHasLoaded: boolean;
+  remoteTransactions: Transaction[];
   transactionEdits: Record<string, TransactionPatch>;
   updateTransaction: (transactionId: string, patch: TransactionPatch) => Promise<void>;
 };
@@ -57,6 +68,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Flight with Alex and Jordan",
     duplicateHash: "chase-sapphire-2026-05-01-vegas-trip-33210",
     id: "txn_20260501_vegas_trip",
+    kind: "expense",
     merchant: "Vegas Trip",
     splitConnection: "Vegas Trip",
     time: "7:20 AM",
@@ -72,6 +84,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Morning coffee",
     duplicateHash: "amex-gold-2026-05-02-starbucks-560",
     id: "txn_20260502_starbucks",
+    kind: "expense",
     merchant: "Starbucks",
     splitConnection: null,
     time: "8:42 AM",
@@ -87,6 +100,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Split with 3 people",
     duplicateHash: "wells-checking-2026-05-03-dinner-with-friends-6840",
     id: "txn_20260503_dinner_with_friends",
+    kind: "expense",
     merchant: "Dinner with friends",
     splitConnection: "Apartment Crew",
     time: "8:10 PM",
@@ -102,6 +116,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Household basics",
     duplicateHash: "chase-sapphire-2026-05-05-target-4218",
     id: "txn_20260505_target",
+    kind: "expense",
     merchant: "Target",
     splitConnection: null,
     time: "5:45 PM",
@@ -117,6 +132,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Late night ride",
     duplicateHash: "chase-sapphire-2026-05-07-uber-1875",
     id: "txn_20260507_uber",
+    kind: "expense",
     merchant: "Uber",
     splitConnection: null,
     time: "11:48 PM",
@@ -132,6 +148,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Needs review",
     duplicateHash: "chase-sapphire-2026-05-09-chipotle-6420",
     id: "txn_20260509_chipotle",
+    kind: "expense",
     merchant: "Chipotle",
     splitConnection: null,
     time: "12:18 PM",
@@ -147,6 +164,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Coffee after gym",
     duplicateHash: "amex-gold-2026-05-11-starbucks-645",
     id: "txn_20260511_starbucks",
+    kind: "expense",
     merchant: "Starbucks",
     splitConnection: null,
     time: "9:15 PM",
@@ -162,6 +180,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Apartment supplies",
     duplicateHash: "chase-sapphire-2026-05-11-amazon-8999",
     id: "txn_20260511_amazon",
+    kind: "expense",
     merchant: "Amazon",
     splitConnection: "Apartment Crew",
     time: "10:02 PM",
@@ -177,6 +196,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Shared dinner ingredients",
     duplicateHash: "wells-checking-2026-05-11-whole-foods-4730",
     id: "txn_20260511_whole_foods",
+    kind: "expense",
     merchant: "Whole Foods",
     splitConnection: "Apartment Crew",
     time: "6:20 PM",
@@ -192,6 +212,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Monthly subscription",
     duplicateHash: "chase-sapphire-2026-05-11-netflix-1299",
     id: "txn_20260511_netflix",
+    kind: "expense",
     merchant: "Netflix",
     splitConnection: null,
     time: "7:00 AM",
@@ -207,6 +228,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Needs review",
     duplicateHash: "chase-sapphire-2026-05-12-uber-eats-2410",
     id: "txn_20260512_uber_eats",
+    kind: "expense",
     merchant: "Uber Eats",
     splitConnection: null,
     time: "9:15 PM",
@@ -222,6 +244,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Bulk groceries",
     duplicateHash: "amex-gold-2026-05-12-costco-8245",
     id: "txn_20260512_costco",
+    kind: "expense",
     merchant: "Costco",
     splitConnection: null,
     time: "5:48 PM",
@@ -237,6 +260,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Dinner supplies",
     duplicateHash: "wells-checking-2026-05-12-trader-joes-6742",
     id: "txn_20260512_trader_joes",
+    kind: "expense",
     merchant: "Trader Joe's",
     splitConnection: "Apartment Crew",
     time: "11:20 AM",
@@ -252,6 +276,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Fuel",
     duplicateHash: "chase-sapphire-2026-05-12-shell-gas-station-4500",
     id: "txn_20260512_shell_gas_station",
+    kind: "expense",
     merchant: "Shell Gas Station",
     splitConnection: null,
     time: "9:02 AM",
@@ -267,6 +292,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Group meal",
     duplicateHash: "amex-gold-2026-05-16-brunch-7425",
     id: "txn_20260516_brunch",
+    kind: "expense",
     merchant: "Brunch",
     splitConnection: "NYC Friends",
     time: "10:45 AM",
@@ -282,6 +308,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Roommate split likely",
     duplicateHash: "wells-checking-2026-05-18-electric-bill-21040",
     id: "txn_20260518_electric_bill",
+    kind: "expense",
     merchant: "Electric Bill",
     splitConnection: null,
     time: "8:00 AM",
@@ -297,6 +324,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Weekly groceries",
     duplicateHash: "chase-sapphire-2026-05-21-trader-joes-3524",
     id: "txn_20260521_trader_joes",
+    kind: "expense",
     merchant: "Trader Joe's",
     splitConnection: null,
     time: "6:14 PM",
@@ -309,6 +337,15 @@ export const classificationLabel: Record<Classification, string> = {
   shared: "Shared",
   unclassified: "Unclassified"
 };
+
+export const transactionKindLabel: Record<TransactionKind, string> = {
+  expense: "Expense",
+  income: "Income",
+  payment: "Payment",
+  transfer: "Transfer"
+};
+
+export const isSpendTransaction = (transaction: Transaction) => transaction.kind === "expense";
 
 export const getTransactionKey = (transaction: Transaction) => transaction.id;
 
@@ -324,7 +361,21 @@ export const formatCurrency = (value: number, compact = false) =>
   }).format(value);
 
 export const formatSpendAmount = (value: number) =>
-  value === 0 ? formatCurrency(0) : `-${formatCurrency(value)}`;
+  value <= 0 ? formatCurrency(value) : `-${formatCurrency(value)}`;
+
+export const formatTransactionAmount = (transaction: Pick<Transaction, "amount" | "kind">) => {
+  if (transaction.kind === "expense") {
+    return formatSpendAmount(transaction.amount);
+  }
+
+  if (transaction.kind === "income") {
+    return `+${formatCurrency(Math.abs(transaction.amount))}`;
+  }
+
+  return transaction.amount < 0
+    ? formatCurrency(transaction.amount)
+    : formatCurrency(transaction.amount);
+};
 
 const isClassification = (value: unknown): value is Classification =>
   value === "personal" || value === "shared" || value === "unclassified";
@@ -365,6 +416,15 @@ const sanitizeTransactionPatch = (value: unknown): TransactionPatch => {
     sanitized.merchant = patch.merchant;
   }
 
+  if (
+    patch.kind === "expense" ||
+    patch.kind === "income" ||
+    patch.kind === "payment" ||
+    patch.kind === "transfer"
+  ) {
+    sanitized.kind = patch.kind;
+  }
+
   if (typeof patch.splitConnection === "string" || patch.splitConnection === null) {
     sanitized.splitConnection = patch.splitConnection;
   }
@@ -398,6 +458,77 @@ const persistTransactionEdits = async (transactionEdits: Record<string, Transact
   await AsyncStorage.setItem(ledgerStorageKey, JSON.stringify({ transactionEdits }));
 };
 
+const readMetadataString = (metadata: Json, key: string) => {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const value = metadata[key];
+
+  return typeof value === "string" ? value : null;
+};
+
+const inferTransactionKind = (transaction: DatabaseTransaction): TransactionKind => {
+  const descriptor = `${transaction.merchant} ${transaction.description ?? ""}`;
+
+  if (
+    /mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|credit card payment|card payment|autopay|online payment|payment to/i.test(
+      descriptor
+    )
+  ) {
+    return "payment";
+  }
+
+  if (/transfer (to|from)|internet transfer|external transfer|account transfer/i.test(descriptor)) {
+    return "transfer";
+  }
+
+  if (/payroll|deposit|zelle payment from|refund|credit/i.test(descriptor)) {
+    return "income";
+  }
+
+  return transaction.kind ?? "expense";
+};
+
+const toLedgerTransaction = (
+  transaction: DatabaseTransaction
+): Transaction => {
+  const kind = inferTransactionKind(transaction);
+  const amount =
+    kind === "payment" ? -(transaction.amount_minor / 100) : transaction.amount_minor / 100;
+
+  return {
+    account: "Imported account",
+    amount,
+    category:
+      readMetadataString(transaction.metadata, "import_category") ??
+      (kind === "payment" || kind === "transfer"
+        ? "Payments / Transfers"
+        : kind === "income"
+          ? "Income"
+          : "Uncategorized"),
+    classification:
+      transaction.status === "personal" || transaction.status === "shared"
+        ? transaction.status
+        : "unclassified",
+    createdAt: transaction.created_at,
+    date: transaction.transaction_date,
+    description: transaction.description ?? transaction.original_description ?? "",
+    duplicateHash: transaction.duplicate_hash,
+    id: transaction.id,
+    kind,
+    merchant: transaction.merchant,
+    splitConnection: readMetadataString(transaction.metadata, "split_connection"),
+    time: transaction.posted_at
+      ? new Intl.DateTimeFormat("en-US", {
+          hour: "numeric",
+          minute: "2-digit"
+        }).format(new Date(transaction.posted_at))
+      : "All day",
+    updatedAt: transaction.updated_at
+  };
+};
+
 export const useTransactionLedgerStore = create<LedgerState>((set, get) => ({
   hasLoaded: false,
   loadLedger: async () => {
@@ -417,6 +548,27 @@ export const useTransactionLedgerStore = create<LedgerState>((set, get) => ({
       set({ hasLoaded: true, transactionEdits: {} });
     }
   },
+  loadRemoteTransactions: async (userId) => {
+    try {
+      const transactions = await transactionService.listForUser(userId);
+
+      set({
+        remoteError: null,
+        remoteHasLoaded: true,
+        remoteTransactions: transactions.map(toLedgerTransaction)
+      });
+    } catch (error) {
+      set({
+        remoteError:
+          error instanceof Error ? error.message : "Could not load transactions from Supabase.",
+        remoteHasLoaded: true,
+        remoteTransactions: []
+      });
+    }
+  },
+  remoteError: null,
+  remoteHasLoaded: false,
+  remoteTransactions: [],
   transactionEdits: {},
   updateTransaction: async (transactionId, patch) => {
     const nextPatch = sanitizeTransactionPatch({
@@ -437,19 +589,32 @@ export const useTransactionLedgerStore = create<LedgerState>((set, get) => ({
 }));
 
 export const useLedgerTransactions = () => {
+  const { user } = useAuth();
   const loadLedger = useTransactionLedgerStore((state) => state.loadLedger);
+  const loadRemoteTransactions = useTransactionLedgerStore(
+    (state) => state.loadRemoteTransactions
+  );
+  const remoteTransactions = useTransactionLedgerStore((state) => state.remoteTransactions);
   const transactionEdits = useTransactionLedgerStore((state) => state.transactionEdits);
 
   useEffect(() => {
+    if (user) {
+      void loadRemoteTransactions(user.id);
+      return;
+    }
+
     void loadLedger();
-  }, [loadLedger]);
+  }, [loadLedger, loadRemoteTransactions, user]);
 
   return useMemo(
-    () =>
-      defaultTransactions.map((transaction) => ({
+    () => {
+      const sourceTransactions = user ? remoteTransactions : defaultTransactions;
+
+      return sourceTransactions.map((transaction) => ({
         ...transaction,
         ...(transactionEdits[transaction.id] ?? {})
-      })),
-    [transactionEdits]
+      }));
+    },
+    [remoteTransactions, transactionEdits, user]
   );
 };

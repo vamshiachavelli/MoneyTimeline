@@ -38,6 +38,7 @@ import {
 } from "@/navigation/return-target";
 import {
   formatCurrency,
+  isSpendTransaction,
   useLedgerTransactions,
   type Classification,
   type Transaction
@@ -165,7 +166,10 @@ export const InsightsScreen = () => {
   const monthKey = toMonthKey(monthDate);
 
   const monthTransactions = useMemo(
-    () => ledgerTransactions.filter((transaction) => transaction.date.startsWith(monthKey)),
+    () =>
+      ledgerTransactions.filter(
+        (transaction) => transaction.date.startsWith(monthKey) && isSpendTransaction(transaction)
+      ),
     [ledgerTransactions, monthKey]
   );
 

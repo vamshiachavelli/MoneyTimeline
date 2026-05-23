@@ -6,12 +6,11 @@ import {
   Clock3,
   HandCoins,
   ReceiptText,
-  Send,
   UserRound,
   UsersRound
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppTopBar } from "@/components/navigation/app-top-bar";
 import { PremiumEmptyState } from "@/components/ui/premium-empty-state";
@@ -38,6 +37,14 @@ type SharedNotice = {
   undoSettlementId?: string;
 };
 
+type SettlementMode = "full" | "partial";
+
+type SettlementSheetState = {
+  amountInput: string;
+  mode: SettlementMode;
+  row: SharedBalanceRow;
+};
+
 const getReadableDate = (dateKey: string) =>
   new Date(`${dateKey}T12:00:00`).toLocaleDateString("en-US", {
     day: "numeric",
@@ -62,6 +69,7 @@ export const SharedScreen = () => {
   const loadSettlements = useSettlementStore((state) => state.loadSettlements);
   const [activeView, setActiveView] = useState<"balances" | "transactions">("balances");
   const [notice, setNotice] = useState<SharedNotice | null>(null);
+  const [settlementSheet, setSettlementSheet] = useState<SettlementSheetState | null>(null);
 
   useEffect(() => {
     void loadPeople();
@@ -99,10 +107,58 @@ export const SharedScreen = () => {
     router.push(`/settlement/${row.type}/${encodeURIComponent(row.id)}?returnTo=shared`);
   };
 
-  const quickSettle = async (row: SharedBalanceRow) => {
+  const openSettleSheet = (row: SharedBalanceRow) => {
+    setSettlementSheet({
+      amountInput: Math.abs(row.amount).toFixed(2),
+      mode: "full",
+      row
+    });
+  };
+
+  const closeSettleSheet = () => {
+    setSettlementSheet(null);
+  };
+
+  const updateSettleMode = (mode: SettlementMode) => {
+    setSettlementSheet((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        amountInput: mode === "full" ? Math.abs(current.row.amount).toFixed(2) : "",
+        mode
+      };
+    });
+  };
+
+  const updateSettleAmount = (amountInput: string) => {
+    setSettlementSheet((current) => (current ? { ...current, amountInput } : current));
+  };
+
+  const confirmSettlement = async () => {
+    if (!settlementSheet) {
+      return;
+    }
+
+    const row = settlementSheet.row;
+    const balanceAmount = Math.abs(row.amount);
+    const parsedAmount =
+      settlementSheet.mode === "full"
+        ? balanceAmount
+        : Number.parseFloat(settlementSheet.amountInput);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0 || parsedAmount > balanceAmount) {
+      return;
+    }
+
     const savedSettlement = await createUserConfirmedSettlement({
-      amount: Math.abs(row.amount),
-      notes: "Quick settlement marked from Shared.",
+      amount: parsedAmount,
+      notes:
+        settlementSheet.mode === "full"
+          ? "Full settlement marked from Shared."
+          : "Partial settlement marked from Shared.",
       status: "user_confirmed",
       targetId: row.id,
       targetName: row.name,
@@ -110,8 +166,12 @@ export const SharedScreen = () => {
       transactionIds: row.transactionIds
     });
 
+    closeSettleSheet();
     setNotice({
-      message: `${row.name} marked settled.`,
+      message:
+        settlementSheet.mode === "full"
+          ? `${row.name} marked settled.`
+          : `${formatCurrency(parsedAmount)} settled with ${row.name}.`,
       undoSettlementId: savedSettlement.id
     });
   };
@@ -120,12 +180,6 @@ export const SharedScreen = () => {
     await cancelSettlement(settlementId);
     setNotice({
       message: "Settlement undone."
-    });
-  };
-
-  const showPlaceholderNotice = () => {
-    setNotice({
-      message: "Request placeholder - payment requests arrive after settlement detail."
     });
   };
 
@@ -228,9 +282,8 @@ export const SharedScreen = () => {
                       accentSoft={accentSoft}
                       cardColor={palette.card}
                       key={row.id}
-                      onMarkSettled={() => void quickSettle(row)}
+                      onMarkSettled={() => openSettleSheet(row)}
                       onOpen={() => openSettlement(row)}
-                      onRequest={showPlaceholderNotice}
                       row={row}
                     />
                   ))}
@@ -256,9 +309,8 @@ export const SharedScreen = () => {
                       accentSoft={accentSoft}
                       cardColor={palette.card}
                       key={`${row.type}-${row.id}`}
-                      onMarkSettled={() => void quickSettle(row)}
+                      onMarkSettled={() => openSettleSheet(row)}
                       onOpen={() => openSettlement(row)}
-                      onRequest={showPlaceholderNotice}
                       row={row}
                     />
                   ))}
@@ -301,6 +353,18 @@ export const SharedScreen = () => {
             </>
           )}
         </ScrollView>
+
+        {settlementSheet ? (
+          <SettlementSheet
+            accentColor={accentColor}
+            accentSoft={accentSoft}
+            onClose={closeSettleSheet}
+            onConfirm={() => void confirmSettlement()}
+            onModeChange={updateSettleMode}
+            onPartialAmountChange={updateSettleAmount}
+            sheet={settlementSheet}
+          />
+        ) : null}
       </View>
     </Screen>
   );
@@ -326,7 +390,6 @@ const BalanceCard = ({
   cardColor,
   onMarkSettled,
   onOpen,
-  onRequest,
   row
 }: {
   accentColor: string;
@@ -334,7 +397,6 @@ const BalanceCard = ({
   cardColor: string;
   onMarkSettled: () => void;
   onOpen: () => void;
-  onRequest: () => void;
   row: SharedBalanceRow;
 }) => {
   const isPositive = row.amount >= 0;
@@ -384,17 +446,6 @@ const BalanceCard = ({
       </View>
 
       <View style={styles.cardActions}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={(event) => {
-            event.stopPropagation();
-            onRequest();
-          }}
-          style={({ pressed }) => [styles.requestButton, pressed && styles.pressed]}
-        >
-          <Send color={colors.textPrimary} size={14} strokeWidth={2.5} />
-          <Text style={styles.requestButtonText}>Request</Text>
-        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={(event) => {
@@ -455,6 +506,164 @@ const SharedTransactionCard = ({
     </View>
     <ChevronRight color={colors.textMuted} size={18} />
   </Pressable>
+);
+
+const SettlementSheet = ({
+  accentColor,
+  accentSoft,
+  onClose,
+  onConfirm,
+  onModeChange,
+  onPartialAmountChange,
+  sheet
+}: {
+  accentColor: string;
+  accentSoft: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  onModeChange: (mode: SettlementMode) => void;
+  onPartialAmountChange: (amount: string) => void;
+  sheet: SettlementSheetState;
+}) => {
+  const balanceAmount = Math.abs(sheet.row.amount);
+  const parsedPartial = Number.parseFloat(sheet.amountInput);
+  const settlementAmount = sheet.mode === "full" ? balanceAmount : parsedPartial;
+  const hasValidAmount =
+    Number.isFinite(settlementAmount) &&
+    settlementAmount > 0 &&
+    settlementAmount <= balanceAmount;
+  const remainingAmount = hasValidAmount ? balanceAmount - settlementAmount : balanceAmount;
+  const directionCopy = sheet.row.amount >= 0 ? "they owe you" : "you owe";
+  const validationMessage =
+    sheet.mode === "partial" && sheet.amountInput.trim()
+      ? !Number.isFinite(parsedPartial) || parsedPartial <= 0
+        ? "Enter an amount greater than $0."
+        : parsedPartial > balanceAmount
+          ? "Partial settlement cannot exceed the open balance."
+          : ""
+      : sheet.mode === "partial"
+        ? "Enter the partial amount to settle."
+        : "";
+
+  return (
+    <View pointerEvents="box-none" style={styles.sheetOverlay}>
+      <Pressable
+        accessibilityLabel="Close settlement sheet"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={styles.sheetScrim}
+      />
+      <View style={styles.settlementSheet}>
+        <LinearGradient
+          colors={["rgba(17, 25, 35, 0.98)", "rgba(7, 11, 17, 0.98)"]}
+          style={[styles.settlementSheetSurface, { borderColor: `${accentColor}38` }]}
+        >
+          <View style={styles.sheetHandle} />
+
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={[styles.eyebrow, { color: accentColor }]}>Settle balance</Text>
+              <Text style={styles.sheetTitle}>{sheet.row.name}</Text>
+              <Text style={styles.sheetSubtitle}>
+                {formatCurrency(balanceAmount)} open - {directionCopy}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityLabel="Close settlement sheet"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={({ pressed }) => [styles.sheetCloseButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.sheetCloseText}>Close</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.settleModeRow}>
+            {(["full", "partial"] as const).map((mode) => {
+              const active = sheet.mode === mode;
+
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  key={mode}
+                  onPress={() => onModeChange(mode)}
+                  style={({ pressed }) => [
+                    styles.settleModePill,
+                    active && { backgroundColor: accentSoft, borderColor: `${accentColor}66` },
+                    pressed && styles.pressed
+                  ]}
+                >
+                  <Text style={[styles.settleModeText, active && { color: accentColor }]}>
+                    {mode === "full" ? "Full amount" : "Partial amount"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {sheet.mode === "partial" ? (
+            <View style={styles.partialInputWrap}>
+              <Text style={styles.partialInputLabel}>Settlement amount</Text>
+              <TextInput
+                keyboardType="decimal-pad"
+                onChangeText={onPartialAmountChange}
+                placeholder="0.00"
+                placeholderTextColor={colors.textMuted}
+                style={styles.partialInput}
+                value={sheet.amountInput}
+              />
+              {validationMessage ? (
+                <Text style={styles.validationText}>{validationMessage}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.reviewCard}>
+            <ReviewLine label="Open balance" value={formatCurrency(balanceAmount)} />
+            <ReviewLine
+              label="Settlement amount"
+              value={hasValidAmount ? formatCurrency(settlementAmount) : "--"}
+            />
+            <ReviewLine
+              highlight
+              label="Remaining after this"
+              value={formatCurrency(remainingAmount)}
+            />
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={!hasValidAmount}
+            onPress={onConfirm}
+            style={({ pressed }) => [
+              styles.confirmSettlementButton,
+              { backgroundColor: accentColor },
+              !hasValidAmount && styles.confirmSettlementButtonDisabled,
+              pressed && styles.pressed
+            ]}
+          >
+            <CheckCircle2 color={colors.background} size={17} strokeWidth={2.7} />
+            <Text style={styles.confirmSettlementText}>Confirm settlement</Text>
+          </Pressable>
+        </LinearGradient>
+      </View>
+    </View>
+  );
+};
+
+const ReviewLine = ({
+  highlight = false,
+  label,
+  value
+}: {
+  highlight?: boolean;
+  label: string;
+  value: string;
+}) => (
+  <View style={styles.reviewLine}>
+    <Text style={highlight ? styles.reviewLabelStrong : styles.reviewLabel}>{label}</Text>
+    <Text style={highlight ? styles.reviewValueStrong : styles.reviewValue}>{value}</Text>
+  </View>
 );
 
 const EmptyState = ({
@@ -722,22 +931,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm
   },
-  requestButton: {
-    minHeight: 38,
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    borderRadius: radii.md,
-    backgroundColor: "rgba(255, 255, 255, 0.06)"
-  },
-  requestButtonText: {
-    color: colors.textPrimary,
-    fontSize: 12,
-    fontWeight: "900",
-    lineHeight: 17
-  },
   settleButton: {
     minHeight: 38,
     flex: 1,
@@ -809,6 +1002,170 @@ const styles = StyleSheet.create({
   },
   savedTextActive: {
     color: colors.accent
+  },
+  sheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+    zIndex: 80
+  },
+  sheetScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.58)"
+  },
+  settlementSheet: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: 96
+  },
+  settlementSheetSurface: {
+    gap: spacing.md,
+    borderRadius: 26,
+    borderWidth: 1,
+    padding: spacing.lg,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: -18 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.18)"
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
+  sheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 28
+  },
+  sheetSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  sheetCloseButton: {
+    minHeight: 34,
+    justifyContent: "center",
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    paddingHorizontal: spacing.md
+  },
+  sheetCloseText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17
+  },
+  settleModeRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  settleModePill: {
+    minHeight: 44,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)"
+  },
+  settleModeText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  partialInputWrap: {
+    gap: spacing.xs
+  },
+  partialInputLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    textTransform: "uppercase"
+  },
+  partialInput: {
+    minHeight: 50,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(5, 8, 13, 0.5)",
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "900",
+    paddingHorizontal: spacing.md
+  },
+  validationText: {
+    color: colors.warning,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 15
+  },
+  reviewCard: {
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(5, 8, 13, 0.38)",
+    padding: spacing.md
+  },
+  reviewLine: {
+    minHeight: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md
+  },
+  reviewLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  reviewValue: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  reviewLabelStrong: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  reviewValueStrong: {
+    color: colors.accent,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 20
+  },
+  confirmSettlementButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg
+  },
+  confirmSettlementButtonDisabled: {
+    opacity: 0.45
+  },
+  confirmSettlementText: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 20
   },
   emptyState: {
     minHeight: 120,

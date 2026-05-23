@@ -19,6 +19,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { PremiumEmptyState } from "@/components/ui/premium-empty-state";
 import { Screen } from "@/components/ui/screen";
 import { useAccountsStore, type MoneyAccount } from "@/features/accounts/account-store";
+import { useAuth } from "@/features/auth/auth-provider";
 import { useAppearanceTheme } from "@/features/settings/use-appearance-theme";
 import { getSavedDuplicateHashes } from "@/features/import/import-save-service";
 import { useImportSessionStore } from "@/features/import/import-session-store";
@@ -32,6 +33,7 @@ import {
   getReturnTargetRoute,
   withReturnTo
 } from "@/navigation/return-target";
+import { uploadService } from "@/services/supabase/upload-service";
 import { colors, radii, spacing } from "@/styles/theme";
 
 type ImportStatus = "idle" | "picked" | "uploading" | "ready" | "error";
@@ -91,6 +93,7 @@ const getFileKind = (file?: DocumentPicker.DocumentPickerAsset | null) => {
 export const ImportStatementScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const returnTarget = getReturnTargetParam(params.returnTo);
   const returnRoute = getReturnTargetRoute(params.returnTo);
@@ -184,6 +187,31 @@ export const ImportStatementScreen = () => {
     setStatus("uploading");
 
     try {
+      let uploadedFileId: string | null = null;
+      let importJobId: string | null = null;
+
+      if (user) {
+        const upload = await uploadService.uploadStatementBlob({
+          contentType: selectedFile.mimeType,
+          fileName: selectedFile.name,
+          uri: selectedFile.uri,
+          userId: user.id
+        });
+        const registeredFile = await uploadService.registerUploadedFile(user.id, {
+          bucketId: upload.bucketId,
+          fileName: selectedFile.name,
+          mimeType: selectedFile.mimeType,
+          sizeBytes: upload.sizeBytes,
+          storagePath: upload.storagePath
+        });
+        const importJob = (await uploadService.startProcessing(registeredFile.id)) as {
+          import_job_id?: string;
+        } | null;
+
+        uploadedFileId = registeredFile.id;
+        importJobId = importJob?.import_job_id ?? null;
+      }
+
       const knownDuplicateHashes = await getSavedDuplicateHashes();
       const result = await parseStatementFile({
         account: {
@@ -198,7 +226,9 @@ export const ImportStatementScreen = () => {
       setSession({
         account: selectedAccount,
         fileName: selectedFile.name,
-        result
+        importJobId,
+        result,
+        uploadedFileId
       });
       setSummary(result.summary);
       setProgress(100);

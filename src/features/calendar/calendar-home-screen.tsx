@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Coffee,
+  CreditCard,
   MoreHorizontal,
   RotateCcw,
   ShoppingBag,
@@ -32,11 +33,15 @@ import {
   classificationLabel,
   formatCurrency,
   formatSpendAmount,
+  formatTransactionAmount,
   getTransactionKey,
+  isSpendTransaction,
+  transactionKindLabel,
   useLedgerTransactions,
   useTransactionLedgerStore,
   type Classification,
-  type Transaction
+  type Transaction,
+  type TransactionKind
 } from "@/features/transactions/transaction-ledger";
 import { colors, radii, spacing } from "@/styles/theme";
 
@@ -68,18 +73,23 @@ const monthNames = [
   "December"
 ];
 
-const mayTotals = {
-  personal: 1120.4,
-  shared: 980.3,
-  total: 2450.75,
-  unclassified: 350.05
-};
-
 const classificationColor: Record<Classification, string> = {
   personal: colors.personal,
   shared: colors.shared,
   unclassified: colors.unclassified
 };
+
+const transactionKindColor: Record<TransactionKind, string> = {
+  expense: colors.unclassified,
+  income: colors.personal,
+  payment: "#5CA8FF",
+  transfer: "#5CA8FF"
+};
+
+const getTransactionTone = (transaction: Transaction) =>
+  isSpendTransaction(transaction)
+    ? classificationColor[transaction.classification]
+    : transactionKindColor[transaction.kind];
 
 const dayCellHeight = 74;
 const calendarColumnLines = Array.from(
@@ -147,10 +157,22 @@ export const CalendarHomeScreen = () => {
       return acc;
     }, {});
   }, [monthTransactions]);
-  const isMay2026 = monthKey === "2026-05";
-  const totals = isMay2026
-    ? mayTotals
-    : { personal: 0, shared: 0, total: 0, unclassified: 0 };
+  const totals = useMemo(
+    () =>
+      monthTransactions.reduce(
+        (acc, transaction) => {
+          if (!isSpendTransaction(transaction)) {
+            return acc;
+          }
+
+          acc.total += transaction.amount;
+          acc[transaction.classification] += transaction.amount;
+          return acc;
+        },
+        { personal: 0, shared: 0, total: 0, unclassified: 0 }
+      ),
+    [monthTransactions]
+  );
 
   const openDaySheet = (key: string) => {
     setSelectedKey(key);
@@ -188,6 +210,10 @@ export const CalendarHomeScreen = () => {
     transaction: Transaction,
     nextClassification: Classification
   ) => {
+    if (!isSpendTransaction(transaction)) {
+      return;
+    }
+
     if (nextClassification === "shared") {
       setSharedReviewTransaction({ ...transaction, classification: nextClassification });
     }
@@ -443,7 +469,9 @@ const CalendarDayCell = ({
   selected: boolean;
   transactions: Transaction[];
 }) => {
-  const dayTotal = dayTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const dayTotal = dayTransactions
+    .filter(isSpendTransaction)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
 
   return (
     <Pressable
@@ -504,7 +532,7 @@ const TransactionCoinStack = ({ transactions: stackTransactions }: { transaction
           style={[
             styles.coinMoon,
             styles.coinMoonBack,
-            { backgroundColor: classificationColor[thirdTransaction.classification] }
+            { backgroundColor: getTransactionTone(thirdTransaction) }
           ]}
         />
       ) : null}
@@ -513,14 +541,14 @@ const TransactionCoinStack = ({ transactions: stackTransactions }: { transaction
           style={[
             styles.coinMoon,
             thirdTransaction ? styles.coinMoonMiddle : styles.coinMoonSingle,
-            { backgroundColor: classificationColor[secondTransaction.classification] }
+            { backgroundColor: getTransactionTone(secondTransaction) }
           ]}
         />
       ) : null}
       <View
         style={[
           styles.coinMain,
-          { backgroundColor: classificationColor[frontTransaction.classification] }
+          { backgroundColor: getTransactionTone(frontTransaction) }
         ]}
       >
         <Text style={styles.merchantInitial}>{frontTransaction.merchant.charAt(0)}</Text>
@@ -554,7 +582,9 @@ const DayLedgerSheet = ({
 }) => {
   const router = useRouter();
   const date = getDateFromKey(dateKey);
-  const total = dayTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const spendTotal = dayTransactions
+    .filter(isSpendTransaction)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
   const sheetProgress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -632,7 +662,7 @@ const DayLedgerSheet = ({
               </Text>
               <Text style={styles.sheetTotal}>
                 {date.toLocaleDateString("en-US", { weekday: "long" })} - Total{" "}
-                {formatCurrency(total)}
+                {formatCurrency(spendTotal)}
               </Text>
             </View>
 
@@ -689,7 +719,7 @@ const DayLedgerSheet = ({
 
           <View style={styles.sheetFooter}>
             <Text style={styles.sheetCount}>{dayTransactions.length} transactions</Text>
-            <Text style={styles.sheetFooterTotal}>{formatSpendAmount(total)}</Text>
+            <Text style={styles.sheetFooterTotal}>{formatSpendAmount(spendTotal)}</Text>
           </View>
 
         </LinearGradient>
@@ -718,7 +748,7 @@ const SharedSplitStarter = ({
           </Text>
         </View>
       </View>
-      <Text style={styles.sharedStarterAmount}>{formatSpendAmount(transaction.amount)}</Text>
+            <Text style={styles.sharedStarterAmount}>{formatTransactionAmount(transaction)}</Text>
     </View>
 
     <View style={styles.splitModeRow}>
@@ -833,8 +863,12 @@ const SheetTransactionRow = ({
   onPress: () => void;
   transaction: Transaction;
 }) => {
-  const Icon = transaction.category === "Coffee" ? Coffee : ShoppingBag;
-  const tone = classificationColor[transaction.classification];
+  const isSpend = isSpendTransaction(transaction);
+  const Icon = !isSpend ? CreditCard : transaction.category === "Coffee" ? Coffee : ShoppingBag;
+  const tone = getTransactionTone(transaction);
+  const badgeLabel = isSpend
+    ? classificationLabel[transaction.classification]
+    : transactionKindLabel[transaction.kind];
   const translateX = useRef(new Animated.Value(0)).current;
   const latestDragX = useRef(0);
   const actionOpacity = translateX.interpolate({
@@ -861,7 +895,9 @@ const SheetTransactionRow = ({
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        isSpend &&
+        Math.abs(gestureState.dx) > 8 &&
+        Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
       onPanResponderMove: (_, gestureState) => {
         const clampedX = Math.max(-122, Math.min(122, gestureState.dx));
         latestDragX.current = clampedX;
@@ -886,10 +922,12 @@ const SheetTransactionRow = ({
 
   return (
     <View style={styles.swipeContainer}>
-      <Animated.View style={[styles.swipeActionLayer, { opacity: actionOpacity }]}>
-        <SwipeActionPanel direction="left" label="Shared" tone="shared" />
-        <SwipeActionPanel direction="right" label="Personal" tone="personal" />
-      </Animated.View>
+      {isSpend ? (
+        <Animated.View style={[styles.swipeActionLayer, { opacity: actionOpacity }]}>
+          <SwipeActionPanel direction="left" label="Shared" tone="shared" />
+          <SwipeActionPanel direction="right" label="Personal" tone="personal" />
+        </Animated.View>
+      ) : null}
       <Animated.View
         {...panResponder.panHandlers}
         style={{ transform: [{ translateX }] }}
@@ -915,11 +953,11 @@ const SheetTransactionRow = ({
             </Text>
           </View>
           <View style={styles.sheetAmountBlock}>
-            <Text style={styles.sheetAmount}>{formatSpendAmount(transaction.amount)}</Text>
+            <Text style={styles.sheetAmount}>{formatTransactionAmount(transaction)}</Text>
             <View style={[styles.sheetStatusPill, { backgroundColor: `${tone}16` }]}>
               <View style={[styles.sheetStatusDot, { backgroundColor: tone }]} />
               <Text style={[styles.sheetStatusText, { color: tone }]}>
-                {classificationLabel[transaction.classification]}
+                {badgeLabel}
               </Text>
             </View>
           </View>

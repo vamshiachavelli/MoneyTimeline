@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleHelp,
+  CreditCard,
   HandCoins,
   ReceiptText,
   Search,
@@ -34,14 +35,17 @@ import { useAppearanceTheme } from "@/features/settings/use-appearance-theme";
 import {
   classificationLabel,
   formatCurrency,
-  formatSpendAmount,
+  formatTransactionAmount,
+  isSpendTransaction,
+  transactionKindLabel,
   useLedgerTransactions,
   type Classification,
-  type Transaction
+  type Transaction,
+  type TransactionKind
 } from "@/features/transactions/transaction-ledger";
 import { colors, radii, spacing } from "@/styles/theme";
 
-type TimelineFilter = "all" | Classification | "settlements";
+type TimelineFilter = "all" | Classification | "payments" | "settlements";
 
 type TimelineItem =
   | {
@@ -74,6 +78,7 @@ const filterOptions: Array<{ label: string; value: TimelineFilter }> = [
   { label: "Personal", value: "personal" },
   { label: "Shared", value: "shared" },
   { label: "Unclassified", value: "unclassified" },
+  { label: "Payments", value: "payments" },
   { label: "Settlements", value: "settlements" }
 ];
 
@@ -88,6 +93,18 @@ const classificationIcon: Record<Classification, typeof UserRound> = {
   shared: UsersRound,
   unclassified: CircleHelp
 };
+
+const transactionKindColor: Record<TransactionKind, string> = {
+  expense: colors.unclassified,
+  income: colors.personal,
+  payment: "#5CA8FF",
+  transfer: "#5CA8FF"
+};
+
+const getTransactionTone = (transaction: Transaction) =>
+  isSpendTransaction(transaction)
+    ? classificationColor[transaction.classification]
+    : transactionKindColor[transaction.kind];
 
 const settlementStatusCopy: Record<SettlementStatus, { label: string; tone: string }> = {
   both_confirmed: {
@@ -167,7 +184,13 @@ const buildTimelineGroups = (items: TimelineItem[]): TimelineGroup[] => {
         date,
         label: formatGroupLabel(date),
         meta: formatGroupMeta(date),
-        total: sorted.reduce((sum, item) => sum + item.amount, 0),
+        total: sorted.reduce(
+          (sum, item) =>
+            item.kind === "transaction" && !isSpendTransaction(item.transaction)
+              ? sum
+              : sum + item.amount,
+          0
+        ),
         items: sorted
       };
     })
@@ -188,12 +211,17 @@ export const TimelineFeedScreen = () => {
     void loadSettlements();
   }, [loadSettlements]);
 
+  const activeSettlements = useMemo(
+    () => settlements.filter((settlement) => settlement.status !== "cancelled"),
+    [settlements]
+  );
+
   const timelineItems = useMemo(
     () => [
       ...ledgerTransactions.map(buildTransactionItem),
-      ...settlements.map(buildSettlementItem)
+      ...activeSettlements.map(buildSettlementItem)
     ],
-    [ledgerTransactions, settlements]
+    [activeSettlements, ledgerTransactions]
   );
 
   const filteredItems = useMemo(
@@ -202,6 +230,9 @@ export const TimelineFeedScreen = () => {
         const matchesFilter =
           activeFilter === "all" ||
           (activeFilter === "settlements" && item.kind === "settlement") ||
+          (activeFilter === "payments" &&
+            item.kind === "transaction" &&
+            !isSpendTransaction(item.transaction)) ||
           (item.kind === "transaction" && item.transaction.classification === activeFilter);
 
         const matchesQuery = !normalizedQuery || doesItemMatchQuery(item, normalizedQuery);
@@ -213,21 +244,39 @@ export const TimelineFeedScreen = () => {
 
   const groups = useMemo(() => buildTimelineGroups(filteredItems), [filteredItems]);
   const transactionCount = ledgerTransactions.length;
-  const settlementCount = settlements.length;
-  const confirmedSettlementCount = settlements.filter(
-    (settlement) => settlement.status !== "cancelled"
-  ).length;
+  const settlementCount = activeSettlements.length;
+  const confirmedSettlementCount = activeSettlements.length;
   const showingLabel = filteredItems.length === 1 ? "activity" : "activities";
   const totalSpend = filteredItems.reduce(
-    (sum, item) => (item.kind === "transaction" ? sum + item.amount : sum),
+    (sum, item) =>
+      item.kind === "transaction" && isSpendTransaction(item.transaction)
+        ? sum + item.amount
+        : sum,
     0
   );
   const totalSettled = filteredItems.reduce(
     (sum, item) => (item.kind === "settlement" ? sum + item.amount : sum),
     0
   );
-  const heroValue = activeFilter === "settlements" ? totalSettled : totalSpend;
-  const heroValueLabel = activeFilter === "settlements" ? "Settled total" : "Total spend";
+  const paymentTotal = filteredItems.reduce(
+    (sum, item) =>
+      item.kind === "transaction" && !isSpendTransaction(item.transaction)
+        ? sum + Math.abs(item.amount)
+        : sum,
+    0
+  );
+  const heroValue =
+    activeFilter === "settlements"
+      ? totalSettled
+      : activeFilter === "payments"
+        ? paymentTotal
+        : totalSpend;
+  const heroValueLabel =
+    activeFilter === "settlements"
+      ? "Settled total"
+      : activeFilter === "payments"
+        ? "Payments moved"
+        : "Total spend";
   const unclassifiedCount = ledgerTransactions.filter(
     (transaction) => transaction.classification === "unclassified"
   ).length;
@@ -304,9 +353,12 @@ export const TimelineFeedScreen = () => {
                   ? transactionCount + settlementCount
                   : filter.value === "settlements"
                     ? settlementCount
-                    : ledgerTransactions.filter(
-                        (transaction) => transaction.classification === filter.value
-                      ).length;
+                    : filter.value === "payments"
+                      ? ledgerTransactions.filter((transaction) => !isSpendTransaction(transaction))
+                          .length
+                      : ledgerTransactions.filter(
+                          (transaction) => transaction.classification === filter.value
+                        ).length;
 
               return (
                 <Pressable
@@ -449,8 +501,12 @@ const TimelineTransactionCard = ({
   onPress: () => void;
   transaction: Transaction;
 }) => {
-  const tone = classificationColor[transaction.classification];
-  const Icon = classificationIcon[transaction.classification];
+  const isSpend = isSpendTransaction(transaction);
+  const tone = getTransactionTone(transaction);
+  const Icon = isSpend ? classificationIcon[transaction.classification] : CreditCard;
+  const statusLabel = isSpend
+    ? classificationLabel[transaction.classification]
+    : transactionKindLabel[transaction.kind];
 
   return (
     <Pressable
@@ -481,7 +537,7 @@ const TimelineTransactionCard = ({
         <View style={styles.statusRow}>
           <View style={[styles.statusPill, { backgroundColor: `${tone}18` }]}>
             <Text style={[styles.statusText, { color: tone }]}>
-              {classificationLabel[transaction.classification]}
+              {statusLabel}
             </Text>
           </View>
           {transaction.splitConnection ? (
@@ -493,7 +549,7 @@ const TimelineTransactionCard = ({
       </View>
 
       <View style={styles.amountBlock}>
-        <Text style={styles.transactionAmount}>{formatSpendAmount(transaction.amount)}</Text>
+        <Text style={styles.transactionAmount}>{formatTransactionAmount(transaction)}</Text>
         <ChevronRight color={colors.textMuted} size={17} strokeWidth={2.5} />
       </View>
     </Pressable>

@@ -1,0 +1,2 @@
+-- MoneyTimeline seed file.
+-- Production projects should not seed personal financial data.

@@ -7,7 +7,9 @@ export type ImportSession = {
   account: ImportAccount;
   createdAt: string;
   fileName: string;
+  importJobId?: string | null;
   result: StatementParseResult;
+  uploadedFileId?: string | null;
 };
 
 type ImportSessionState = {

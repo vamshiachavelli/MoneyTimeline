@@ -21,11 +21,17 @@ import {
 
 import { Screen } from "@/components/ui/screen";
 import { useAccountsStore, type MoneyAccount } from "@/features/accounts/account-store";
-import { saveReviewedImport, type SaveableImportTransaction } from "@/features/import/import-save-service";
+import { useAuth } from "@/features/auth/auth-provider";
+import {
+  saveReviewedImport,
+  saveReviewedImportToSupabase,
+  type SaveableImportTransaction
+} from "@/features/import/import-save-service";
 import { useImportSessionStore } from "@/features/import/import-session-store";
 import { useAppearanceTheme } from "@/features/settings/use-appearance-theme";
 import type {
   DuplicateTransactionDraft,
+  ParsedTransactionKind,
   ParsedTransactionDraft,
   StatementFailedRow
 } from "@/features/import/statement-parser";
@@ -47,6 +53,7 @@ type ReviewTransactionRow = {
   description: string;
   duplicateHash: string;
   id: string;
+  kind: ParsedTransactionKind;
   merchant: string;
   rowNumber: number;
   skipped: boolean;
@@ -67,6 +74,7 @@ const toReviewRow = (transaction: ParsedTransactionDraft): ReviewTransactionRow 
   description: transaction.description ?? "",
   duplicateHash: transaction.duplicateHash,
   id: `${transaction.duplicateHash}-${transaction.rowNumber}`,
+  kind: transaction.kind ?? "expense",
   merchant: transaction.merchant,
   rowNumber: transaction.rowNumber,
   skipped: false
@@ -85,6 +93,7 @@ const toSaveableTransaction = (row: ReviewTransactionRow): SaveableImportTransac
     date: row.date.trim(),
     merchant: row.merchant.trim()
   }),
+  kind: row.kind,
   merchant: row.merchant.trim(),
   rowNumber: row.rowNumber
 });
@@ -97,9 +106,24 @@ const formatCurrency = (value: number) =>
     style: "currency"
   }).format(value);
 
+const kindLabel: Record<ParsedTransactionKind, string> = {
+  expense: "Expense",
+  income: "Income",
+  payment: "Payment",
+  transfer: "Transfer"
+};
+
+const kindTone: Record<ParsedTransactionKind, string> = {
+  expense: colors.unclassified,
+  income: colors.personal,
+  payment: "#5CA8FF",
+  transfer: "#5CA8FF"
+};
+
 export const ImportReviewScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft } = useAppearanceTheme();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const returnTarget = getReturnTargetParam(params.returnTo);
   const returnRoute = getReturnTargetRoute(params.returnTo);
@@ -156,10 +180,19 @@ export const ImportReviewScreen = () => {
     setSaveState({ status: "saving" });
 
     try {
-      const result = await saveReviewedImport({
-        fileName: session.fileName,
-        transactions: activeRows.map(toSaveableTransaction)
-      });
+      const saveableTransactions = activeRows.map(toSaveableTransaction);
+      const result =
+        user && session.uploadedFileId
+          ? await saveReviewedImportToSupabase({
+              importJobId: session.importJobId,
+              transactions: saveableTransactions,
+              uploadedFileId: session.uploadedFileId,
+              userId: user.id
+            })
+          : await saveReviewedImport({
+              fileName: session.fileName,
+              transactions: saveableTransactions
+            });
 
       setSaveState({
         savedCount: result.savedCount,
@@ -361,6 +394,11 @@ const ReviewTransactionCard = ({
       <View>
         <Text style={styles.rowLabel}>Row {row.rowNumber}</Text>
         <Text style={styles.rowTitle}>Transaction {index + 1}</Text>
+      </View>
+      <View style={[styles.kindPill, { backgroundColor: `${kindTone[row.kind]}18` }]}>
+        <Text style={[styles.kindPillText, { color: kindTone[row.kind] }]}>
+          {kindLabel[row.kind]}
+        </Text>
       </View>
       <Pressable
         accessibilityLabel={row.skipped ? "Restore row" : "Skip row"}
@@ -769,6 +807,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
     lineHeight: 20
+  },
+  kindPill: {
+    minHeight: 30,
+    justifyContent: "center",
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md
+  },
+  kindPillText: {
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    textTransform: "uppercase"
   },
   skipButton: {
     minHeight: 34,

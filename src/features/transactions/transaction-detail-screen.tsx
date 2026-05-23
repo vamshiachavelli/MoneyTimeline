@@ -46,12 +46,15 @@ import {
 import {
   classificationLabel,
   formatCurrency,
-  formatSpendAmount,
+  formatTransactionAmount,
   getTransactionById,
+  isSpendTransaction,
+  transactionKindLabel,
   useLedgerTransactions,
   useTransactionLedgerStore,
   type Classification,
-  type Transaction
+  type Transaction,
+  type TransactionKind
 } from "@/features/transactions/transaction-ledger";
 import { getReturnTargetRoute } from "@/navigation/return-target";
 import { colors, radii, spacing } from "@/styles/theme";
@@ -132,6 +135,13 @@ const classificationColor: Record<Classification, string> = {
   personal: colors.personal,
   shared: colors.shared,
   unclassified: colors.unclassified
+};
+
+const transactionKindColor: Record<TransactionKind, string> = {
+  expense: colors.unclassified,
+  income: colors.personal,
+  payment: "#5CA8FF",
+  transfer: "#5CA8FF"
 };
 
 const toForm = (transaction: Transaction): DetailForm => ({
@@ -520,7 +530,7 @@ export const TransactionDetailScreen = () => {
   }, [didAutoOpenSplit, form, splitParam, transaction]);
 
   const handleClassificationPress = async (classification: Classification) => {
-    if (!transaction) {
+    if (!transaction || !isSpendTransaction(transaction)) {
       return;
     }
 
@@ -721,7 +731,13 @@ export const TransactionDetailScreen = () => {
     );
   }
 
-  const statusColor = classificationColor[form.classification];
+  const isSpend = isSpendTransaction(transaction);
+  const statusColor = isSpend
+    ? classificationColor[form.classification]
+    : transactionKindColor[transaction.kind];
+  const statusLabel = isSpend
+    ? classificationLabel[form.classification]
+    : transactionKindLabel[transaction.kind];
   const sharedWith =
     form.classification === "shared"
       ? form.splitConnection.trim() || "Split connection pending"
@@ -782,7 +798,7 @@ export const TransactionDetailScreen = () => {
               <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
                 <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
                 <Text style={[styles.statusText, { color: statusColor }]}>
-                  {classificationLabel[form.classification]}
+                  {statusLabel}
                 </Text>
               </View>
             </View>
@@ -807,7 +823,7 @@ export const TransactionDetailScreen = () => {
                 value={form.amount}
               />
             ) : (
-              <Text style={styles.heroAmount}>{formatSpendAmount(transaction.amount)}</Text>
+              <Text style={styles.heroAmount}>{formatTransactionAmount(transaction)}</Text>
             )}
 
             <Text style={styles.heroMeta}>
@@ -826,41 +842,52 @@ export const TransactionDetailScreen = () => {
               ) : null}
             </View>
 
-            <View style={styles.segmentRow}>
-              {(["personal", "shared", "unclassified"] as Classification[]).map((classification) => {
-                const active = form.classification === classification;
-                const tone = classificationColor[classification];
+            {isSpend ? (
+              <>
+                <View style={styles.segmentRow}>
+                  {(["personal", "shared", "unclassified"] as Classification[]).map((classification) => {
+                    const active = form.classification === classification;
+                    const tone = classificationColor[classification];
 
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={classification}
-                    onPress={() => handleClassificationPress(classification)}
-                    style={({ pressed }) => [
-                      styles.segmentPill,
-                      active && {
-                        backgroundColor: `${tone}18`,
-                        borderColor: `${tone}70`
-                      },
-                      pressed && styles.pressed
-                    ]}
-                  >
-                    <Text style={[styles.segmentText, active && { color: tone }]}>
-                      {classificationLabel[classification]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    return (
+                      <Pressable
+                        accessibilityRole="button"
+                        key={classification}
+                        onPress={() => handleClassificationPress(classification)}
+                        style={({ pressed }) => [
+                          styles.segmentPill,
+                          active && {
+                            backgroundColor: `${tone}18`,
+                            borderColor: `${tone}70`
+                          },
+                          pressed && styles.pressed
+                        ]}
+                      >
+                        <Text style={[styles.segmentText, active && { color: tone }]}>
+                          {classificationLabel[classification]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
 
-            <InfoRow
-              icon={form.classification === "shared" ? UsersRound : UserRound}
-              label="Shared with"
-              tone={statusColor}
-              value={sharedWith}
-            />
+                <InfoRow
+                  icon={form.classification === "shared" ? UsersRound : UserRound}
+                  label="Shared with"
+                  tone={statusColor}
+                  value={sharedWith}
+                />
+              </>
+            ) : (
+              <InfoRow
+                icon={CreditCard}
+                label="Import type"
+                tone={statusColor}
+                value={`${statusLabel} - excluded from spending totals and split review`}
+              />
+            )}
 
-            {form.classification === "shared" ? (
+            {isSpend && form.classification === "shared" ? (
               <>
                 <Pressable
                   accessibilityRole="button"
@@ -883,7 +910,7 @@ export const TransactionDetailScreen = () => {
               </>
             ) : null}
 
-            {isEditing ? (
+            {isSpend && isEditing ? (
               <DetailInput
                 editable={form.classification === "shared"}
                 label="Shared with"

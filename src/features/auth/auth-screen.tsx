@@ -38,7 +38,13 @@ type AuthScreenProps = {
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const normalizeAuthError = (message: string) => {
-  if (message.toLowerCase().includes("invalid login")) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("email rate limit")) {
+    return "Supabase has sent too many signup emails. Try signing in with an existing account, wait a bit before creating another account, or disable email confirmation/customize SMTP in Supabase Auth while testing.";
+  }
+
+  if (normalized.includes("invalid login")) {
     return "That email and password combination was not found.";
   }
 
