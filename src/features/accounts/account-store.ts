@@ -19,9 +19,10 @@ type NewMoneyAccount = Omit<MoneyAccount, "id">;
 
 type AccountState = {
   accounts: MoneyAccount[];
-  addAccount: (account: NewMoneyAccount) => Promise<void>;
+  addAccount: (account: NewMoneyAccount) => Promise<MoneyAccount>;
   deleteAccount: (id: string) => Promise<void>;
   hasLoaded: boolean;
+  loadedUserId: string | null;
   loadAccounts: () => Promise<void>;
   updateAccount: (id: string, patch: Partial<NewMoneyAccount>) => Promise<void>;
 };
@@ -153,19 +154,21 @@ export const useAccountsStore = create<AccountState>((set, get) => ({
 
       set({ accounts: nextAccounts });
       await persistAccounts(nextAccounts);
-      return;
+      return toMoneyAccount(created);
     }
 
+    const createdAccount = {
+      ...account,
+      id: `account_${Date.now()}`
+    };
     const nextAccounts = [
       ...get().accounts,
-      {
-        ...account,
-        id: `account_${Date.now()}`
-      }
+      createdAccount
     ];
 
     set({ accounts: nextAccounts });
     await persistAccounts(nextAccounts);
+    return createdAccount;
   },
   deleteAccount: async (id) => {
     const currentAccounts = get().accounts;
@@ -185,13 +188,14 @@ export const useAccountsStore = create<AccountState>((set, get) => ({
     await persistAccounts(nextAccounts);
   },
   hasLoaded: false,
+  loadedUserId: null,
   loadAccounts: async () => {
-    if (get().hasLoaded) {
-      return;
-    }
-
     try {
       const userId = await getCurrentUserId();
+
+      if (get().hasLoaded && get().loadedUserId === userId) {
+        return;
+      }
 
       if (userId) {
         const remoteAccounts = await accountService.list(userId);
@@ -202,7 +206,8 @@ export const useAccountsStore = create<AccountState>((set, get) => ({
 
         set({
           accounts,
-          hasLoaded: true
+          hasLoaded: true,
+          loadedUserId: userId
         });
         await persistAccounts(accounts);
         return;
@@ -213,12 +218,14 @@ export const useAccountsStore = create<AccountState>((set, get) => ({
 
       set({
         accounts: accounts.length > 0 ? accounts : defaultAccounts,
-        hasLoaded: true
+        hasLoaded: true,
+        loadedUserId: null
       });
     } catch {
       set({
         accounts: defaultAccounts,
-        hasLoaded: true
+        hasLoaded: true,
+        loadedUserId: null
       });
     }
   },

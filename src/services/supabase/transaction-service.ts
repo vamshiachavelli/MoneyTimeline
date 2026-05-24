@@ -51,6 +51,24 @@ export const transactionService = {
 
     return data;
   },
+  findDuplicateHashes: async (userId: string, duplicateHashes: string[]) => {
+    if (duplicateHashes.length === 0) {
+      return new Set<string>();
+    }
+
+    const { data, error } = await getSupabaseClient()
+      .from("transactions")
+      .select("duplicate_hash")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .in("duplicate_hash", duplicateHashes);
+
+    if (error) {
+      throw error;
+    }
+
+    return new Set((data ?? []).map((transaction) => transaction.duplicate_hash));
+  },
   listByDateRange: async ({
     endDate,
     startDate,

@@ -1,5 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   CalendarDays,
   CheckCircle2,
@@ -200,6 +200,8 @@ const buildTimelineGroups = (items: TimelineItem[]): TimelineGroup[] => {
 export const TimelineFeedScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
+  const params = useLocalSearchParams<{ importBatchId?: string }>();
+  const importBatchId = typeof params.importBatchId === "string" ? params.importBatchId : "";
   const ledgerTransactions = useLedgerTransactions();
   const settlements = useSettlementStore((state) => state.settlements);
   const loadSettlements = useSettlementStore((state) => state.loadSettlements);
@@ -227,6 +229,9 @@ export const TimelineFeedScreen = () => {
   const filteredItems = useMemo(
     () =>
       sortItems(timelineItems).filter((item) => {
+        const matchesImport =
+          !importBatchId ||
+          (item.kind === "transaction" && item.transaction.importBatchId === importBatchId);
         const matchesFilter =
           activeFilter === "all" ||
           (activeFilter === "settlements" && item.kind === "settlement") ||
@@ -237,9 +242,9 @@ export const TimelineFeedScreen = () => {
 
         const matchesQuery = !normalizedQuery || doesItemMatchQuery(item, normalizedQuery);
 
-        return matchesFilter && matchesQuery;
+        return matchesImport && matchesFilter && matchesQuery;
       }),
-    [activeFilter, normalizedQuery, timelineItems]
+    [activeFilter, importBatchId, normalizedQuery, timelineItems]
   );
 
   const groups = useMemo(() => buildTimelineGroups(filteredItems), [filteredItems]);
@@ -297,7 +302,9 @@ export const TimelineFeedScreen = () => {
               </View>
               <View style={styles.heroCopy}>
                 <Text style={[styles.eyebrow, { color: accentColor }]}>Timeline feed</Text>
-                <Text style={styles.heroTitle}>Every spend, in order</Text>
+                <Text style={styles.heroTitle}>
+                  {importBatchId ? "Recently imported" : "Every spend, in order"}
+                </Text>
               </View>
             </View>
 
@@ -346,6 +353,21 @@ export const TimelineFeedScreen = () => {
             horizontal
             showsHorizontalScrollIndicator={false}
           >
+            {importBatchId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.replace("/timeline")}
+                style={({ pressed }) => [
+                  styles.filterPill,
+                  styles.filterPillActive,
+                  { backgroundColor: accentSoft, borderColor: `${accentColor}55` },
+                  pressed && styles.pressed
+                ]}
+              >
+                <Text style={[styles.filterText, { color: accentColor }]}>Recent import</Text>
+                <Text style={styles.filterCountActive}>{filteredItems.length}</Text>
+              </Pressable>
+            ) : null}
             {filterOptions.map((filter) => {
               const active = activeFilter === filter.value;
               const count =

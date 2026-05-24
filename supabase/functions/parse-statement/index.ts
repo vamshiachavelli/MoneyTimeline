@@ -44,6 +44,14 @@ type TransactionDraft = {
 
 type TransactionKind = "expense" | "income" | "payment" | "transfer";
 
+type DetectedStatementAccount = {
+  accountType: "Checking" | "Credit card" | "Savings" | "Other";
+  confidence: "high" | "medium";
+  institution: string;
+  lastFour: string | null;
+  name: string;
+};
+
 type FailedRow = {
   message: string;
   raw: Record<string, string> | string;
@@ -97,6 +105,7 @@ Deno.serve(async (request) => {
             rowNumber: 0
           }
         ],
+        detectedAccount: null,
         fileType: "pdf",
         source: "remote_pdf_ocr",
         summary: {
@@ -127,6 +136,7 @@ const parsePdfStatement = async (body: ParseStatementBody) => {
   }
 
   const lines = groupItemsIntoLines(items);
+  const detectedAccount = detectStatementAccount(`${body.fileName} ${lines.map((line) => line.text).join(" ")}`);
   const candidates = extractTransactionsFromPositionedLines(lines, body);
   const failedRows: FailedRow[] = [];
 
@@ -139,7 +149,10 @@ const parsePdfStatement = async (body: ParseStatementBody) => {
     });
   }
 
-  const result = buildResult(candidates, failedRows, body.knownDuplicateHashes ?? []);
+  const result = {
+    ...buildResult(candidates, failedRows, body.knownDuplicateHashes ?? []),
+    detectedAccount
+  };
 
   if (body.debug) {
     return {
@@ -260,7 +273,7 @@ const extractTransactionsFromPositionedLines = (
       }
 
       const normalizedAmount = normalizeAmount(amount, merchant);
-      const kind = inferTransactionKind(merchant, normalizedAmount);
+      const kind = inferTransactionKind(`${merchant} ${description}`, normalizedAmount);
 
       return {
         accountId: body.account.id,
@@ -330,7 +343,7 @@ const parseFullTransactionLine = (
   }
 
   const normalizedAmount = normalizeAmount(amount, merchant);
-  const kind = inferTransactionKind(merchant, normalizedAmount);
+  const kind = inferTransactionKind(`${merchant} ${description}`, normalizedAmount);
 
   return {
     accountId: body.account.id,
@@ -414,7 +427,7 @@ const isHeaderOrNoise = (text: string) =>
   );
 
 const isNoiseMerchant = (merchant: string) =>
-  /^(total|amount|new balance|minimum payment|interest charge|payment due date|customer care|website|payments?|credits?|fees?)\b/i.test(
+  /^(total|amount|new balance|minimum payment|interest charge|payment due date|customer care|website|fees?)\b/i.test(
     merchant
   );
 
@@ -446,7 +459,7 @@ const normalizeAmount = (amount: number, merchant: string) => {
 };
 
 const isCreditLike = (descriptor: string) =>
-  /payroll|deposit|refund|credit|reversal|cashback|zelle payment from|mobile payment - thank you|ach deposit|internet transfer from/i.test(
+  /payroll|deposit|refund|credit|reversal|cashback|zelle payment from|mobile payment - thank you|ach deposit|internet transfer from|account transfer/i.test(
     descriptor
   );
 
@@ -505,11 +518,107 @@ const formatDateParts = (year: number, month: number, day: number) => {
 };
 
 const cleanMerchant = (value: string) =>
+  getKnownMerchantName(value) ??
   value
     .replace(/\s+/g, " ")
     .replace(/\b(?:co id|id|indn|conf)#?:?.*$/i, "")
+    .replace(/\s+(?:des|id|indn):.*$/i, "")
+    .replace(/\s+\d{3,}.*$/g, "")
+    .replace(/\s+(?:seattle|bellevue|redmond|cupertino|philadelphia|wa|ca|pa|usa)\b.*$/i, "")
     .replace(/\b\d{8,}\b/g, "")
     .trim();
+
+const knownMerchantRules: Array<[RegExp, string]> = [
+  [/mobile payment - thank you|payment thank you/i, "Credit Card Payment"],
+  [/ach deposit.*internet transfer|internet transfer from/i, "Account Transfer"],
+  [/american express.*ach pmt/i, "American Express Payment"],
+  [/zelle payment from\s+(.+?)(?:\s+conf#|$)/i, "Zelle Payment Received"],
+  [/zelle payment to\s+(.+?)(?:\s+conf#|$)/i, "Zelle Payment"],
+  [/amazon\.com svcs.*payroll/i, "Amazon Payroll"],
+  [/amazon|amzn\.com/i, "Amazon"],
+  [/apple\.com\/bill|apple online store/i, "Apple"],
+  [/starbucks/i, "Starbucks"],
+  [/target/i, "Target"],
+  [/uber eats/i, "Uber Eats"],
+  [/\buber\b/i, "Uber"],
+  [/trader joe/i, "Trader Joe's"],
+  [/whole foods/i, "Whole Foods"],
+  [/costco/i, "Costco"],
+  [/qfc/i, "QFC"],
+  [/safeway fuel/i, "Safeway Fuel"],
+  [/safeway/i, "Safeway"],
+  [/\b76\b|northgate 76/i, "76 Gas"],
+  [/shell/i, "Shell"],
+  [/s?dot paybyphone|parking/i, "Parking"],
+  [/seattle muni/i, "Seattle Municipal"],
+  [/domino/i, "Domino's"],
+  [/saffron/i, "Saffron Spice"],
+  [/masala/i, "Masala of India"],
+  [/desi adda/i, "Desi Adda"],
+  [/mayuri bakery/i, "Mayuri Bakery"],
+  [/mayuri foods/i, "Mayuri Foods"],
+  [/dollar tree/i, "Dollar Tree"],
+  [/maple leaf/i, "Maple Leaf"],
+  [/remitly/i, "Remitly"],
+  [/comcast|xfinity/i, "Xfinity"],
+  [/purchase interest charge/i, "Interest Charge"]
+];
+
+const getKnownMerchantName = (value: string) => {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const match = knownMerchantRules.find(([pattern]) => pattern.test(normalized));
+
+  return match?.[1] ?? null;
+};
+
+const detectStatementAccount = (text: string): DetectedStatementAccount | null => {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const lastFour =
+    normalized.match(/(?:ending in|ending|account(?: number)?|card(?: number)?|acct)\D{0,16}(\d{4})/i)?.[1] ??
+    normalized.match(/\*{2,}(\d{4})/)?.[1] ??
+    null;
+  const accountRules: Array<[RegExp, Omit<DetectedStatementAccount, "lastFour">]> = [
+    [
+      /apple\s+card|goldman\s+sachs/i,
+      {
+        accountType: "Credit card",
+        confidence: "high",
+        institution: "Apple Card",
+        name: "Apple Card"
+      }
+    ],
+    [
+      /chase|jpmorgan/i,
+      {
+        accountType: "Credit card",
+        confidence: "high",
+        institution: "Chase",
+        name: "Chase Card"
+      }
+    ],
+    [
+      /american\s+express|\bamex\b/i,
+      {
+        accountType: "Credit card",
+        confidence: "high",
+        institution: "American Express",
+        name: "Amex Card"
+      }
+    ],
+    [
+      /wells\s+fargo/i,
+      {
+        accountType: "Checking",
+        confidence: "high",
+        institution: "Wells Fargo",
+        name: "Wells Fargo Account"
+      }
+    ]
+  ];
+  const match = accountRules.find(([pattern]) => pattern.test(normalized));
+
+  return match ? { ...match[1], lastFour } : null;
+};
 
 const inferCategory = (merchant: string, kind: TransactionKind) => {
   if (kind === "payment" || kind === "transfer") {
@@ -520,23 +629,23 @@ const inferCategory = (merchant: string, kind: TransactionKind) => {
     return "Income";
   }
 
-  if (/fuel|76|shell|uber|parking|muni|s?dot|paybyphone/i.test(merchant)) {
+  if (/fuel|76\b|shell|uber|parking|muni|s?dot|paybyphone|delta|flight/i.test(merchant)) {
     return "Transport";
   }
 
-  if (/domino|restaurant|tst\*|saffron|masala|desi adda|bakery|coffee|starbucks/i.test(merchant)) {
+  if (/domino|restaurant|tst\*|saffron|masala|desi adda|bakery|coffee|starbucks|grubhub|doordash|uber eats/i.test(merchant)) {
     return "Dining";
   }
 
-  if (/safeway|qfc|mayuri foods|grocery|trader joe|costco/i.test(merchant)) {
+  if (/safeway|qfc|mayuri foods|grocery|trader joe|costco|whole foods/i.test(merchant)) {
     return "Groceries";
   }
 
-  if (/amazon|apple\.com|dollar tree|comcast|xfinity|rocket money/i.test(merchant)) {
+  if (/amazon|apple|target|dollar tree|comcast|xfinity|rocket money/i.test(merchant)) {
     return "Shopping";
   }
 
-  if (/payment|thank you|ach|zelle|remitly|appfolio|maple leaf/i.test(merchant)) {
+  if (/ach|zelle|remitly|appfolio|maple leaf|electric|utility|bill/i.test(merchant)) {
     return "Bills";
   }
 

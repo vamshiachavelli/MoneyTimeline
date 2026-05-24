@@ -134,6 +134,7 @@ export const CalendarHomeScreen = () => {
   const [sheetKey, setSheetKey] = useState<string | null>(null);
   const [sharedReviewTransaction, setSharedReviewTransaction] = useState<Transaction | null>(null);
   const [undoState, setUndoState] = useState<UndoClassificationState | null>(null);
+  const didApplyLatestImportMonth = useRef(false);
 
   useEffect(() => {
     if (!undoState) {
@@ -147,6 +148,31 @@ export const CalendarHomeScreen = () => {
 
   const calendarDays = useMemo(() => buildCalendarDays(monthDate), [monthDate]);
   const monthKey = `${monthDate.getFullYear()}-${`${monthDate.getMonth() + 1}`.padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (didApplyLatestImportMonth.current || ledgerTransactions.length === 0) {
+      return;
+    }
+
+    const currentMonthHasTransactions = ledgerTransactions.some((transaction) =>
+      transaction.date.startsWith(monthKey)
+    );
+
+    if (currentMonthHasTransactions) {
+      didApplyLatestImportMonth.current = true;
+      return;
+    }
+
+    const latestTransaction = [...ledgerTransactions].sort((a, b) => b.date.localeCompare(a.date))[0];
+
+    if (latestTransaction) {
+      const latestDate = getDateFromKey(latestTransaction.date);
+      setMonthDate(new Date(latestDate.getFullYear(), latestDate.getMonth(), 1));
+      setSelectedKey(latestTransaction.date);
+      didApplyLatestImportMonth.current = true;
+    }
+  }, [ledgerTransactions, monthKey]);
+
   const monthTransactions = useMemo(
     () => ledgerTransactions.filter((transaction) => transaction.date.startsWith(monthKey)),
     [ledgerTransactions, monthKey]

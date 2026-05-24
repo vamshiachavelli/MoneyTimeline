@@ -190,7 +190,7 @@ export const OnboardingScreen = () => {
       return;
     }
 
-    router.replace("/calendar");
+    router.replace("/signup");
   };
 
   return (

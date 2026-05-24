@@ -45,6 +45,24 @@ export const getSavedDuplicateHashes = async () => {
   );
 };
 
+export const getKnownDuplicateHashes = async ({
+  hashes,
+  userId
+}: {
+  hashes?: string[];
+  userId?: string | null;
+} = {}) => {
+  const localHashes = await getSavedDuplicateHashes();
+
+  if (!userId || !hashes || hashes.length === 0) {
+    return localHashes;
+  }
+
+  const remoteHashes = await transactionService.findDuplicateHashes(userId, hashes);
+
+  return new Set([...localHashes, ...remoteHashes]);
+};
+
 export const saveReviewedImport = async ({
   fileName,
   importJobId,
@@ -66,8 +84,27 @@ export const saveReviewedImport = async ({
 
   return {
     batchId: batch.id,
-    savedCount: transactions.length
+    savedCount: transactions.length,
+    transactions
   };
+};
+
+const getImportDisplayMerchant = (transaction: SaveableImportTransaction) => {
+  if (
+    transaction.kind === "payment" &&
+    /^(credit card payment|card payment|payment)$/i.test(transaction.merchant)
+  ) {
+    return `${transaction.accountName} Payment`;
+  }
+
+  if (
+    transaction.kind === "transfer" &&
+    /^(account transfer|transfer)$/i.test(transaction.merchant)
+  ) {
+    return `${transaction.accountName} Transfer`;
+  }
+
+  return transaction.merchant;
 };
 
 export const saveReviewedImportToSupabase = async ({
@@ -85,6 +122,7 @@ export const saveReviewedImportToSupabase = async ({
     throw new Error("Supabase is not configured.");
   }
 
+  const batchId = importJobId ?? uploadedFileId ?? `supabase_${Date.now()}`;
   const transactionInputs: TransactionInput[] = transactions.map((transaction) => ({
     account_id: transaction.accountId,
     amount_minor: Math.round(Math.abs(transaction.amount) * 100),
@@ -96,10 +134,12 @@ export const saveReviewedImportToSupabase = async ({
     import_job_id: importJobId ?? null,
     kind: transaction.kind,
     metadata: {
+      import_account_name: transaction.accountName,
+      import_batch_id: batchId,
       import_category: transaction.category,
       import_row_number: transaction.rowNumber
     },
-    merchant: transaction.merchant,
+    merchant: getImportDisplayMerchant(transaction),
     original_description: transaction.description,
     status: transaction.kind === "expense" ? "unclassified" : "ignored",
     transaction_date: transaction.date,
@@ -109,7 +149,8 @@ export const saveReviewedImportToSupabase = async ({
   const savedTransactions = await transactionService.createMany(userId, transactionInputs);
 
   return {
-    batchId: importJobId ?? `supabase_${Date.now()}`,
-    savedCount: savedTransactions?.length ?? transactions.length
+    batchId,
+    savedCount: savedTransactions?.length ?? transactions.length,
+    transactions
   };
 };

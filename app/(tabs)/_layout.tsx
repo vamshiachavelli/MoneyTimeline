@@ -1,8 +1,19 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 
 import { MoneyBottomTabBar } from "@/components/navigation/money-bottom-tab-bar";
+import { useAuth } from "@/features/auth/auth-provider";
 
 export default function TabLayout() {
+  const { isLoading, session } = useAuth();
+
+  if (isLoading) {
+    return null;
+  }
+
+  if (!session) {
+    return <Redirect href="/login" />;
+  }
+
   return (
     <Tabs
       tabBar={(props) => <MoneyBottomTabBar {...props} />}

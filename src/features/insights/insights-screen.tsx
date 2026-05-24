@@ -17,7 +17,7 @@ import {
   UserRound,
   UsersRound
 } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -163,7 +163,31 @@ export const InsightsScreen = () => {
   const ledgerTransactions = useLedgerTransactions();
   const [monthDate, setMonthDate] = useState(new Date(2026, 4, 1));
   const [notice, setNotice] = useState("");
+  const didApplyLatestImportMonth = useRef(false);
   const monthKey = toMonthKey(monthDate);
+
+  useEffect(() => {
+    if (didApplyLatestImportMonth.current || ledgerTransactions.length === 0) {
+      return;
+    }
+
+    const currentMonthHasTransactions = ledgerTransactions.some((transaction) =>
+      transaction.date.startsWith(monthKey)
+    );
+
+    if (currentMonthHasTransactions) {
+      didApplyLatestImportMonth.current = true;
+      return;
+    }
+
+    const latestTransaction = [...ledgerTransactions].sort((a, b) => b.date.localeCompare(a.date))[0];
+
+    if (latestTransaction) {
+      const latestDate = new Date(`${latestTransaction.date}T12:00:00`);
+      setMonthDate(new Date(latestDate.getFullYear(), latestDate.getMonth(), 1));
+      didApplyLatestImportMonth.current = true;
+    }
+  }, [ledgerTransactions, monthKey]);
 
   const monthTransactions = useMemo(
     () =>

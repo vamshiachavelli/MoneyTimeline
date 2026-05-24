@@ -3,9 +3,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
-  RotateCcw,
   Save,
-  Trash2,
   WalletCards
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
@@ -15,12 +13,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from "react-native";
 
 import { Screen } from "@/components/ui/screen";
-import { useAccountsStore, type MoneyAccount } from "@/features/accounts/account-store";
 import { useAuth } from "@/features/auth/auth-provider";
 import {
   saveReviewedImport,
@@ -56,13 +52,12 @@ type ReviewTransactionRow = {
   kind: ParsedTransactionKind;
   merchant: string;
   rowNumber: number;
-  skipped: boolean;
 };
 
 type SaveState =
   | { status: "idle" }
   | { status: "saving" }
-  | { savedCount: number; status: "saved" }
+  | { batchId: string; savedCount: number; savedTransactions: SaveableImportTransaction[]; status: "saved" }
   | { message: string; status: "error" };
 
 const toReviewRow = (transaction: ParsedTransactionDraft): ReviewTransactionRow => ({
@@ -77,7 +72,6 @@ const toReviewRow = (transaction: ParsedTransactionDraft): ReviewTransactionRow 
   kind: transaction.kind ?? "expense",
   merchant: transaction.merchant,
   rowNumber: transaction.rowNumber,
-  skipped: false
 });
 
 const toSaveableTransaction = (row: ReviewTransactionRow): SaveableImportTransaction => ({
@@ -106,20 +100,6 @@ const formatCurrency = (value: number) =>
     style: "currency"
   }).format(value);
 
-const kindLabel: Record<ParsedTransactionKind, string> = {
-  expense: "Expense",
-  income: "Income",
-  payment: "Payment",
-  transfer: "Transfer"
-};
-
-const kindTone: Record<ParsedTransactionKind, string> = {
-  expense: colors.unclassified,
-  income: colors.personal,
-  payment: "#5CA8FF",
-  transfer: "#5CA8FF"
-};
-
 export const ImportReviewScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft } = useAppearanceTheme();
@@ -128,8 +108,6 @@ export const ImportReviewScreen = () => {
   const returnTarget = getReturnTargetParam(params.returnTo);
   const returnRoute = getReturnTargetRoute(params.returnTo);
   const returnLabel = getReturnTargetLabel(returnTarget);
-  const accounts = useAccountsStore((state) => state.accounts);
-  const loadAccounts = useAccountsStore((state) => state.loadAccounts);
   const session = useImportSessionStore((state) => state.session);
   const clearSession = useImportSessionStore((state) => state.clearSession);
   const [rows, setRows] = useState<ReviewTransactionRow[]>(
@@ -138,16 +116,11 @@ export const ImportReviewScreen = () => {
   const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
 
   useEffect(() => {
-    void loadAccounts();
-  }, [loadAccounts]);
-
-  useEffect(() => {
     setRows(session?.result.transactions.map(toReviewRow) ?? []);
     setSaveState({ status: "idle" });
   }, [session?.createdAt, session?.result.transactions]);
 
-  const activeRows = useMemo(() => rows.filter((row) => !row.skipped), [rows]);
-  const skippedRows = rows.length - activeRows.length;
+  const activeRows = rows;
   const activeTotal = useMemo(
     () =>
       activeRows.reduce((sum, row) => {
@@ -157,20 +130,6 @@ export const ImportReviewScreen = () => {
     [activeRows]
   );
   const validationMessage = useMemo(() => validateRows(activeRows), [activeRows]);
-
-  const updateRow = (id: string, patch: Partial<ReviewTransactionRow>) => {
-    setRows((currentRows) =>
-      currentRows.map((row) => (row.id === id ? { ...row, ...patch } : row))
-    );
-    setSaveState({ status: "idle" });
-  };
-
-  const assignAccount = (id: string, account: MoneyAccount) => {
-    updateRow(id, {
-      accountId: account.id,
-      accountName: account.name
-    });
-  };
 
   const confirmImport = async () => {
     if (!session || validationMessage || activeRows.length === 0) {
@@ -195,7 +154,9 @@ export const ImportReviewScreen = () => {
             });
 
       setSaveState({
+        batchId: result.batchId,
         savedCount: result.savedCount,
+        savedTransactions: saveableTransactions,
         status: "saved"
       });
     } catch {
@@ -223,6 +184,15 @@ export const ImportReviewScreen = () => {
   const viewCalendar = () => {
     clearSession();
     router.replace(returnRoute ?? "/calendar");
+  };
+
+  const viewRecentImport = () => {
+    if (saveState.status !== "saved") {
+      return;
+    }
+
+    clearSession();
+    router.replace(`/timeline?importBatchId=${encodeURIComponent(saveState.batchId)}`);
   };
 
   if (!session) {
@@ -269,7 +239,7 @@ export const ImportReviewScreen = () => {
           </Pressable>
           <View style={styles.headerCopy}>
             <Text style={[styles.eyebrow, { color: accentColor }]}>Review Import</Text>
-            <Text style={styles.title}>Check each row before saving</Text>
+            <Text style={styles.title}>Ready to save your statement</Text>
           </View>
         </View>
 
@@ -283,9 +253,7 @@ export const ImportReviewScreen = () => {
                 <Text numberOfLines={1} style={styles.fileName}>
                   {session.fileName}
                 </Text>
-                <Text style={styles.summaryMeta}>
-                  {activeRows.length} importing - {skippedRows} skipped - {formatCurrency(activeTotal)}
-                </Text>
+                <Text style={styles.summaryMeta}>{activeRows.length} rows ready to import</Text>
               </View>
               <CheckCircle2 color={accentColor} size={24} />
             </View>
@@ -301,12 +269,7 @@ export const ImportReviewScreen = () => {
             <InlineMessage tone="danger" text={validationMessage} />
           ) : null}
 
-          {saveState.status === "saved" ? (
-            <InlineMessage
-              tone="accent"
-              text={`${saveState.savedCount} transactions saved and ready for your timeline.`}
-            />
-          ) : null}
+          {saveState.status === "saved" ? <ImportCompleteCard saveState={saveState} /> : null}
 
           {saveState.status === "error" ? (
             <InlineMessage tone="danger" text={saveState.message} />
@@ -319,25 +282,19 @@ export const ImportReviewScreen = () => {
           {session.result.duplicates.length > 0 ? (
             <DuplicateRowsPreview duplicates={session.result.duplicates} />
           ) : null}
-
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>Extracted Transactions</Text>
-            <Text style={styles.listMeta}>Edit, skip, or reassign</Text>
-          </View>
-
-          {rows.map((row, index) => (
-            <ReviewTransactionCard
-              accounts={accounts}
-              index={index}
-              key={row.id}
-              onAssignAccount={(account) => assignAccount(row.id, account)}
-              onUpdate={(patch) => updateRow(row.id, patch)}
-              row={row}
-            />
-          ))}
         </ScrollView>
 
         <View style={styles.footer}>
+          {saveState.status === "saved" ? (
+            <Pressable
+              accessibilityLabel="View recently imported transactions"
+              accessibilityRole="button"
+              onPress={viewRecentImport}
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.secondaryButtonText}>View Imported Transactions</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityLabel={saveState.status === "saved" ? "View calendar" : "Confirm import"}
             accessibilityRole="button"
@@ -373,153 +330,41 @@ export const ImportReviewScreen = () => {
   );
 };
 
-const ReviewTransactionCard = ({
-  accounts,
-  index,
-  onAssignAccount,
-  onUpdate,
-  row
+const ImportCompleteCard = ({
+  saveState
 }: {
-  accounts: MoneyAccount[];
-  index: number;
-  onAssignAccount: (account: MoneyAccount) => void;
-  onUpdate: (patch: Partial<ReviewTransactionRow>) => void;
-  row: ReviewTransactionRow;
+  saveState: Extract<SaveState, { status: "saved" }>;
 }) => {
   const { accentColor, accentSoft } = useAppearanceTheme();
+  const paymentCount = saveState.savedTransactions.filter(
+    (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+  ).length;
+  const expenseCount = saveState.savedTransactions.filter(
+    (transaction) => transaction.kind === "expense"
+  ).length;
 
   return (
-  <View style={[styles.transactionCard, row.skipped && styles.transactionCardSkipped]}>
-    <View style={styles.transactionHeader}>
-      <View>
-        <Text style={styles.rowLabel}>Row {row.rowNumber}</Text>
-        <Text style={styles.rowTitle}>Transaction {index + 1}</Text>
+    <View style={[styles.completeCard, { backgroundColor: accentSoft, borderColor: `${accentColor}44` }]}>
+      <View style={styles.completeHeader}>
+        <CheckCircle2 color={accentColor} size={24} />
+        <View style={styles.completeCopy}>
+          <Text style={styles.completeTitle}>{saveState.savedCount} transactions imported</Text>
+          <Text style={styles.completeMeta}>
+            {expenseCount} expenses - {paymentCount} payments/transfers
+          </Text>
+        </View>
       </View>
-      <View style={[styles.kindPill, { backgroundColor: `${kindTone[row.kind]}18` }]}>
-        <Text style={[styles.kindPillText, { color: kindTone[row.kind] }]}>
-          {kindLabel[row.kind]}
-        </Text>
-      </View>
-      <Pressable
-        accessibilityLabel={row.skipped ? "Restore row" : "Skip row"}
-        accessibilityRole="button"
-        onPress={() => onUpdate({ skipped: !row.skipped })}
-        style={({ pressed }) => [
-          styles.skipButton,
-          row.skipped && [styles.restoreButton, { backgroundColor: accentSoft }],
-          pressed && styles.pressed
-        ]}
-      >
-        {row.skipped ? (
-          <RotateCcw color={accentColor} size={15} />
-        ) : (
-          <Trash2 color={colors.danger} size={15} />
-        )}
-        <Text style={[styles.skipButtonText, row.skipped && { color: accentColor }]}>
-          {row.skipped ? "Restore" : "Skip"}
-        </Text>
-      </Pressable>
+      {saveState.savedTransactions.slice(0, 4).map((transaction) => (
+        <View key={`${transaction.duplicateHash}-${transaction.rowNumber}`} style={styles.completeRow}>
+          <Text numberOfLines={1} style={styles.completeMerchant}>
+            {transaction.merchant}
+          </Text>
+          <Text style={styles.completeAmount}>{formatCurrency(Math.abs(transaction.amount))}</Text>
+        </View>
+      ))}
     </View>
-
-    <View style={styles.inputGrid}>
-      <LabeledInput
-        label="Date"
-        onChangeText={(date) => onUpdate({ date })}
-        placeholder="YYYY-MM-DD"
-        value={row.date}
-      />
-      <LabeledInput
-        keyboardType="decimal-pad"
-        label="Amount"
-        onChangeText={(amount) => onUpdate({ amount })}
-        placeholder="0.00"
-        value={row.amount}
-      />
-    </View>
-
-    <LabeledInput
-      label="Merchant"
-      onChangeText={(merchant) => onUpdate({ merchant })}
-      placeholder="Merchant"
-      value={row.merchant}
-    />
-
-    <View style={styles.inputGrid}>
-      <LabeledInput
-        label="Category"
-        onChangeText={(category) => onUpdate({ category })}
-        placeholder="Category"
-        value={row.category}
-      />
-      <LabeledInput
-        label="Description"
-        onChangeText={(description) => onUpdate({ description })}
-        placeholder="Optional"
-        value={row.description}
-      />
-    </View>
-
-    <View style={styles.accountChooser}>
-      <Text style={styles.accountChooserLabel}>Account source</Text>
-      <View style={styles.accountChips}>
-        {accounts.map((account) => (
-          <Pressable
-            accessibilityLabel={`Assign ${account.name}`}
-            accessibilityRole="button"
-            key={account.id}
-            onPress={() => onAssignAccount(account)}
-            style={({ pressed }) => [
-              styles.accountChip,
-              row.accountId === account.id && [
-                styles.accountChipActive,
-                { backgroundColor: accentSoft, borderColor: `${accentColor}66` }
-              ],
-              pressed && styles.pressed
-            ]}
-          >
-            <View style={[styles.accountChipDot, { backgroundColor: account.color }]} />
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.accountChipText,
-                row.accountId === account.id && styles.accountChipTextActive
-              ]}
-            >
-              {account.name}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  </View>
   );
 };
-
-const LabeledInput = ({
-  keyboardType = "default",
-  label,
-  onChangeText,
-  placeholder,
-  value
-}: {
-  keyboardType?: "decimal-pad" | "default";
-  label: string;
-  onChangeText: (value: string) => void;
-  placeholder: string;
-  value: string;
-}) => (
-  <View style={styles.inputWrap}>
-    <Text style={styles.inputLabel}>{label}</Text>
-    <TextInput
-      keyboardType={keyboardType}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor={colors.textMuted}
-      style={styles.textInput}
-      value={value}
-    />
-  </View>
-);
 
 const SummaryPill = ({
   label,
@@ -841,78 +686,83 @@ const styles = StyleSheet.create({
   restoreButtonText: {
     color: colors.accent
   },
-  inputGrid: {
+  readOnlyGrid: {
     flexDirection: "row",
     gap: spacing.sm
   },
-  inputWrap: {
+  readOnlyField: {
     minWidth: 0,
     flex: 1,
-    gap: spacing.xs
+    gap: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(5, 8, 13, 0.45)",
+    padding: spacing.md
   },
-  inputLabel: {
+  readOnlyLabel: {
     color: colors.textSecondary,
     fontSize: 11,
     fontWeight: "900",
     lineHeight: 15,
     textTransform: "uppercase"
   },
-  textInput: {
-    minHeight: 46,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.09)",
-    backgroundColor: "rgba(5, 8, 13, 0.5)",
+  readOnlyValue: {
     color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "800",
-    lineHeight: 19,
-    paddingHorizontal: spacing.md
+    lineHeight: 19
   },
-  accountChooser: {
-    gap: spacing.sm
+  completeCard: {
+    gap: spacing.sm,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: spacing.md
   },
-  accountChooserLabel: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 15,
-    textTransform: "uppercase"
-  },
-  accountChips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  accountChip: {
-    minHeight: 34,
-    maxWidth: "100%",
+  completeHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.09)",
-    backgroundColor: "rgba(5, 8, 13, 0.42)",
-    paddingHorizontal: spacing.sm
+    gap: spacing.sm
   },
-  accountChipActive: {
-    borderColor: "rgba(67, 216, 139, 0.4)",
-    backgroundColor: colors.accentSoft
+  completeCopy: {
+    minWidth: 0,
+    flex: 1
   },
-  accountChipDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4
+  completeTitle: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 20
   },
-  accountChipText: {
+  completeMeta: {
     color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "800",
-    lineHeight: 15
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
   },
-  accountChipTextActive: {
-    color: colors.textPrimary
+  completeRow: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: "rgba(5, 8, 13, 0.36)",
+    paddingHorizontal: spacing.md
+  },
+  completeMerchant: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  completeAmount: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17
   },
   footer: {
     position: "absolute",
@@ -934,6 +784,23 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.accent,
     marginHorizontal: spacing.lg
+  },
+  secondaryButton: {
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(17, 25, 35, 0.92)",
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm
+  },
+  secondaryButtonText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
   },
   primaryButtonDisabled: {
     opacity: 0.56

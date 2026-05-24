@@ -8,23 +8,42 @@ import {
   ChevronDown,
   FileSpreadsheet,
   FileText,
+  ReceiptText,
   ShieldCheck,
   UploadCloud,
   WalletCards,
   X
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 
 import { PremiumEmptyState } from "@/components/ui/premium-empty-state";
 import { Screen } from "@/components/ui/screen";
 import { useAccountsStore, type MoneyAccount } from "@/features/accounts/account-store";
 import { useAuth } from "@/features/auth/auth-provider";
 import { useAppearanceTheme } from "@/features/settings/use-appearance-theme";
-import { getSavedDuplicateHashes } from "@/features/import/import-save-service";
+import { useImportCompletionStore } from "@/features/import/import-completion-store";
+import {
+  getKnownDuplicateHashes,
+  getSavedDuplicateHashes,
+  saveReviewedImport,
+  saveReviewedImportToSupabase,
+  type SaveableImportTransaction
+} from "@/features/import/import-save-service";
 import { useImportSessionStore } from "@/features/import/import-session-store";
 import {
+  createTransactionDuplicateHash,
   parseStatementFile,
+  type DetectedStatementAccount,
+  type ParsedTransactionDraft,
   type StatementParseResult,
   type StatementParseSummary
 } from "@/features/import/statement-parser";
@@ -35,8 +54,10 @@ import {
 } from "@/navigation/return-target";
 import { uploadService } from "@/services/supabase/upload-service";
 import { colors, radii, spacing } from "@/styles/theme";
+import { useTransactionLedgerStore } from "@/features/transactions/transaction-ledger";
 
 type ImportStatus = "idle" | "picked" | "uploading" | "ready" | "error";
+type SaveStatus = "idle" | "saving" | "error";
 
 const acceptedStatementTypes = [
   "application/pdf",
@@ -90,6 +111,86 @@ const getFileKind = (file?: DocumentPicker.DocumentPickerAsset | null) => {
   return "Statement file";
 };
 
+const toSaveableTransaction = (
+  transaction: ParsedTransactionDraft
+): SaveableImportTransaction => ({
+  accountId: transaction.accountId,
+  accountName: transaction.accountName,
+  amount: transaction.amount,
+  category: transaction.category,
+  date: transaction.date,
+  description: transaction.description,
+  duplicateHash: createTransactionDuplicateHash({
+    accountId: transaction.accountId,
+    amount: transaction.amount,
+    date: transaction.date,
+    merchant: transaction.merchant
+  }),
+  kind: transaction.kind,
+  merchant: transaction.merchant,
+  rowNumber: transaction.rowNumber
+});
+
+const formatShortDate = (date: string) =>
+  new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short"
+  });
+
+const getDateRangeLabel = (transactions: SaveableImportTransaction[]) => {
+  if (transactions.length === 0) {
+    return "No dates";
+  }
+
+  const dates = transactions.map((transaction) => transaction.date).sort();
+  const firstDate = dates[0];
+  const lastDate = dates[dates.length - 1];
+
+  return firstDate === lastDate
+    ? formatShortDate(firstDate)
+    : `${formatShortDate(firstDate)} - ${formatShortDate(lastDate)}`;
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  const friendlyDuplicateMessage =
+    "This statement looks like it was already imported. We skipped saving it so your timeline does not get duplicate transactions.";
+  const friendlyAmountMessage =
+    "One row in this statement has an amount we could not read. Please try uploading a clearer statement PDF.";
+
+  if (error instanceof Error && error.message) {
+    if (
+      /duplicate key|duplicate_hash|transactions_user_id_duplicate_hash_key/i.test(error.message)
+    ) {
+      return friendlyDuplicateMessage;
+    }
+
+    if (/positive integer in minor currency units/i.test(error.message)) {
+      return friendlyAmountMessage;
+    }
+
+    return error.message;
+  }
+
+  if (error && typeof error === "object") {
+    const errorRecord = error as Record<string, unknown>;
+    const message = errorRecord.message ?? errorRecord.details ?? errorRecord.hint;
+
+    if (typeof message === "string" && message.trim()) {
+      if (/duplicate key|duplicate_hash|transactions_user_id_duplicate_hash_key/i.test(message)) {
+        return friendlyDuplicateMessage;
+      }
+
+      if (/positive integer in minor currency units/i.test(message)) {
+        return friendlyAmountMessage;
+      }
+
+      return message;
+    }
+  }
+
+  return fallback;
+};
+
 export const ImportStatementScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
@@ -98,7 +199,13 @@ export const ImportStatementScreen = () => {
   const returnTarget = getReturnTargetParam(params.returnTo);
   const returnRoute = getReturnTargetRoute(params.returnTo);
   const setSession = useImportSessionStore((state) => state.setSession);
+  const clearSession = useImportSessionStore((state) => state.clearSession);
+  const setCompletion = useImportCompletionStore((state) => state.setCompletion);
+  const loadRemoteTransactions = useTransactionLedgerStore(
+    (state) => state.loadRemoteTransactions
+  );
   const accounts = useAccountsStore((state) => state.accounts);
+  const addAccount = useAccountsStore((state) => state.addAccount);
   const loadAccounts = useAccountsStore((state) => state.loadAccounts);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
@@ -107,6 +214,9 @@ export const ImportStatementScreen = () => {
   const [summary, setSummary] = useState<StatementParseSummary | null>(null);
   const [parseResult, setParseResult] = useState<StatementParseResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [alreadyUploadedVisible, setAlreadyUploadedVisible] = useState(false);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === selectedAccountId) ?? accounts[0],
@@ -160,15 +270,21 @@ export const ImportStatementScreen = () => {
       setProgress(0);
       setSummary(null);
       setParseResult(null);
+      setAlreadyUploadedVisible(false);
+      setSummaryVisible(false);
+      setSaveStatus("idle");
       setStatus("picked");
+      void startImport(file);
     } catch {
       setStatus("error");
       setErrorMessage("Could not open the file picker. Please try again.");
     }
   };
 
-  const startImport = async () => {
-    if (!selectedFile) {
+  const startImport = async (fileOverride?: DocumentPicker.DocumentPickerAsset) => {
+    const fileToImport = fileOverride ?? selectedFile;
+
+    if (!fileToImport) {
       setStatus("error");
       setErrorMessage("Choose a PDF, CSV, or Excel statement first.");
       return;
@@ -183,6 +299,9 @@ export const ImportStatementScreen = () => {
     setErrorMessage(null);
     setSummary(null);
     setParseResult(null);
+    setAlreadyUploadedVisible(false);
+    setSummaryVisible(false);
+    setSaveStatus("idle");
     setProgress(12);
     setStatus("uploading");
 
@@ -192,15 +311,15 @@ export const ImportStatementScreen = () => {
 
       if (user) {
         const upload = await uploadService.uploadStatementBlob({
-          contentType: selectedFile.mimeType,
-          fileName: selectedFile.name,
-          uri: selectedFile.uri,
+          contentType: fileToImport.mimeType,
+          fileName: fileToImport.name,
+          uri: fileToImport.uri,
           userId: user.id
         });
         const registeredFile = await uploadService.registerUploadedFile(user.id, {
           bucketId: upload.bucketId,
-          fileName: selectedFile.name,
-          mimeType: selectedFile.mimeType,
+          fileName: fileToImport.name,
+          mimeType: fileToImport.mimeType,
           sizeBytes: upload.sizeBytes,
           storagePath: upload.storagePath
         });
@@ -212,20 +331,54 @@ export const ImportStatementScreen = () => {
         importJobId = importJob?.import_job_id ?? null;
       }
 
-      const knownDuplicateHashes = await getSavedDuplicateHashes();
-      const result = await parseStatementFile({
+      const localKnownDuplicateHashes = await getSavedDuplicateHashes();
+      const rawResult = await parseStatementFile({
         account: {
           id: selectedAccount.id,
           name: selectedAccount.name
         },
-        file: selectedFile,
-        knownDuplicateHashes
+        file: fileToImport,
+        knownDuplicateHashes: localKnownDuplicateHashes
       });
+      const detectedAccount = await resolveDetectedAccount(rawResult.detectedAccount, {
+        accounts,
+        addAccount,
+        fallbackAccount: selectedAccount
+      });
+      const reassignedResult = applyAccountToParseResult(rawResult, detectedAccount);
+      const knownDuplicateHashes = await getKnownDuplicateHashes({
+        hashes: [
+          ...reassignedResult.transactions.map((transaction) => transaction.duplicateHash),
+          ...reassignedResult.duplicates.map((transaction) => transaction.duplicateHash)
+        ],
+        userId: user?.id
+      });
+      const result = removeInvalidAmountRows(
+        applyKnownDuplicateHashes(reassignedResult, knownDuplicateHashes)
+      );
+
+      setSelectedAccountId(detectedAccount.id);
+
+      if (result.transactions.length === 0 && result.duplicates.length > 0) {
+        setParseResult(null);
+        setSummary(null);
+        setSession({
+          account: detectedAccount,
+          fileName: fileToImport.name,
+          importJobId,
+          result,
+          uploadedFileId
+        });
+        setProgress(100);
+        setStatus("ready");
+        setAlreadyUploadedVisible(true);
+        return;
+      }
 
       setParseResult(result);
       setSession({
-        account: selectedAccount,
-        fileName: selectedFile.name,
+        account: detectedAccount,
+        fileName: fileToImport.name,
         importJobId,
         result,
         uploadedFileId
@@ -233,6 +386,7 @@ export const ImportStatementScreen = () => {
       setSummary(result.summary);
       setProgress(100);
       setStatus("ready");
+      setSummaryVisible(true);
 
       if (result.summary.newTransactions === 0 && result.summary.failedRows > 0) {
         setErrorMessage(result.failedRows[0]?.message ?? "No transactions could be extracted.");
@@ -253,6 +407,9 @@ export const ImportStatementScreen = () => {
     setProgress(0);
     setSummary(null);
     setParseResult(null);
+    setAlreadyUploadedVisible(false);
+    setSummaryVisible(false);
+    setSaveStatus("idle");
     setStatus("idle");
     setErrorMessage(null);
   };
@@ -269,6 +426,63 @@ export const ImportStatementScreen = () => {
     }
 
     router.replace("/calendar");
+  };
+
+  const confirmImport = async () => {
+    if (!parseResult || !selectedAccount || parseResult.transactions.length === 0) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setSaveStatus("saving");
+
+    try {
+      const transactions = parseResult.transactions
+        .filter(isValidImportAmount)
+        .map(toSaveableTransaction);
+
+      if (transactions.length === 0) {
+        setSaveStatus("error");
+        setErrorMessage("We could not find any transactions with valid amounts in this statement.");
+        return;
+      }
+
+      const result =
+        user && parseResult.transactions.length > 0
+          ? await saveReviewedImportToSupabase({
+              importJobId: useImportSessionStore.getState().session?.importJobId,
+              transactions,
+              uploadedFileId: useImportSessionStore.getState().session?.uploadedFileId,
+              userId: user.id
+            })
+          : await saveReviewedImport({
+              fileName: selectedFile?.name ?? "Imported statement",
+              transactions
+            });
+      const savedTransactions = result.transactions ?? transactions;
+
+      if (user) {
+        await loadRemoteTransactions(user.id);
+      }
+
+      setCompletion({
+        accountName: selectedAccount.name,
+        batchId: result.batchId,
+        dateRange: getDateRangeLabel(savedTransactions),
+        fileName: selectedFile?.name ?? "Imported statement",
+        paymentCount: savedTransactions.filter(
+          (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+        ).length,
+        savedCount: result.savedCount,
+        transactions: savedTransactions
+      });
+      clearSession();
+      setSummaryVisible(false);
+      router.replace(withReturnTo("/import-complete", returnTarget));
+    } catch (error) {
+      setSaveStatus("error");
+      setErrorMessage(getErrorMessage(error, "Could not save this import. Please try again."));
+    }
   };
 
   const isUploading = status === "uploading";
@@ -356,6 +570,34 @@ export const ImportStatementScreen = () => {
             </View>
           </LinearGradient>
 
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Import Progress</Text>
+              <Text style={styles.progressPercent}>{isUploading ? `${progress}%` : "Ready"}</Text>
+            </View>
+
+            <View style={styles.progressCard}>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { backgroundColor: accentColor, width: `${progress}%` }
+                  ]}
+                />
+              </View>
+
+              <View style={styles.progressSteps}>
+                <ProgressStep active={!!selectedFile} label="File staged" />
+                <ProgressStep
+                  active={isUploading || isReady}
+                  loading={isUploading}
+                  label="Extracting rows"
+                />
+                <ProgressStep active={isReady} label="Summary ready" />
+              </View>
+            </View>
+          </View>
+
           {errorMessage ? (
             <View style={styles.errorCard}>
               <AlertCircle color={colors.danger} size={18} />
@@ -394,33 +636,7 @@ export const ImportStatementScreen = () => {
             </Pressable>
           </View>
 
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Import Progress</Text>
-              <Text style={styles.progressPercent}>{isUploading ? `${progress}%` : "Ready"}</Text>
-            </View>
-
-            <View style={styles.progressCard}>
-              <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { backgroundColor: accentColor, width: `${progress}%` }
-                  ]}
-                />
-              </View>
-
-              <View style={styles.progressSteps}>
-                <ProgressStep active={!!selectedFile} label="File staged" />
-                <ProgressStep active={isUploading || isReady} loading={isUploading} label="Extracting rows" />
-                <ProgressStep active={isReady} label="Summary ready" />
-              </View>
-            </View>
-          </View>
-
-          {summary && parseResult ? (
-            <ImportSummaryCard result={parseResult} />
-          ) : !selectedFile ? (
+          {!selectedFile ? (
             <PremiumEmptyState
               actionLabel="Choose Statement"
               icon={UploadCloud}
@@ -438,9 +654,13 @@ export const ImportStatementScreen = () => {
             >
               <ShieldCheck color={accentColor} size={20} />
               <View style={styles.securityCopy}>
-                <Text style={styles.securityTitle}>Review before saving</Text>
+                <Text style={styles.securityTitle}>
+                  {isReady ? "Summary ready" : "Review before saving"}
+                </Text>
                 <Text style={styles.securityText}>
-                  Extracted transactions will be shown for editing before anything is added.
+                  {isReady
+                    ? "Open the summary to confirm this import and add it to your timeline."
+                    : "We will show a short summary before anything is added."}
                 </Text>
               </View>
             </View>
@@ -451,16 +671,12 @@ export const ImportStatementScreen = () => {
           <Pressable
             accessibilityLabel="Start import"
             accessibilityRole="button"
-            disabled={isUploading}
-            onPress={
-              isReady && parseResult
-                ? () => router.push(withReturnTo("/import-review", returnTarget))
-                : startImport
-            }
+            disabled={!selectedFile || isUploading || saveStatus === "saving"}
+            onPress={isReady && parseResult ? () => setSummaryVisible(true) : () => void startImport()}
             style={({ pressed }) => [
               styles.primaryButton,
               { backgroundColor: accentColor },
-              (!selectedFile || isUploading) && styles.primaryButtonDisabled,
+              (!selectedFile || isUploading || saveStatus === "saving") && styles.primaryButtonDisabled,
               pressed && selectedFile && !isUploading && styles.pressed
             ]}
           >
@@ -470,12 +686,340 @@ export const ImportStatementScreen = () => {
               <UploadCloud color={colors.background} size={20} strokeWidth={2.6} />
             )}
             <Text style={styles.primaryButtonText}>
-              {isReady ? "Review Transactions" : isUploading ? "Analyzing Statement" : "Import Statement"}
+              {isReady ? "Open Import Summary" : isUploading ? "Analyzing Statement" : "Import Statement"}
+            </Text>
+          </Pressable>
+        </View>
+        <ImportSummaryModal
+          accountName={parseResult?.transactions[0]?.accountName ?? selectedAccount?.name ?? "Account"}
+          errorMessage={saveStatus === "error" ? errorMessage : null}
+          onClose={() => setSummaryVisible(false)}
+          onConfirm={confirmImport}
+          result={parseResult}
+          saveStatus={saveStatus}
+          visible={summaryVisible && !!parseResult}
+        />
+        <AlreadyUploadedModal
+          onOk={clearFile}
+          visible={alreadyUploadedVisible}
+        />
+      </View>
+    </Screen>
+  );
+};
+
+const normalizeAccountText = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const findMatchingAccount = (
+  detectedAccount: DetectedStatementAccount,
+  accounts: MoneyAccount[]
+) => {
+  const detectedInstitution = normalizeAccountText(detectedAccount.institution);
+  const detectedName = normalizeAccountText(detectedAccount.name);
+
+  return (
+    accounts.find(
+      (account) =>
+        detectedAccount.lastFour &&
+        account.lastFour === detectedAccount.lastFour &&
+        (normalizeAccountText(account.name).includes(detectedName) ||
+          normalizeAccountText(account.institution).includes(detectedInstitution) ||
+          detectedInstitution.includes(normalizeAccountText(account.institution)))
+    ) ??
+    accounts.find((account) => {
+      const accountName = normalizeAccountText(account.name);
+      const accountInstitution = normalizeAccountText(account.institution);
+
+      return (
+        accountName.includes(detectedName) ||
+        detectedName.includes(accountName) ||
+        accountInstitution.includes(detectedInstitution) ||
+        detectedInstitution.includes(accountInstitution)
+      );
+    }) ??
+    null
+  );
+};
+
+const resolveDetectedAccount = async (
+  detectedAccount: DetectedStatementAccount | null | undefined,
+  {
+    accounts,
+    addAccount,
+    fallbackAccount
+  }: {
+    accounts: MoneyAccount[];
+    addAccount: (account: Omit<MoneyAccount, "id">) => Promise<MoneyAccount>;
+    fallbackAccount: MoneyAccount;
+  }
+) => {
+  if (!detectedAccount) {
+    return fallbackAccount;
+  }
+
+  const matchedAccount = findMatchingAccount(detectedAccount, accounts);
+
+  if (matchedAccount) {
+    return matchedAccount;
+  }
+
+  return addAccount({
+    accountType: detectedAccount.accountType,
+    color: detectedAccount.institution === "Apple Card" ? "#FFFFFF" : "#5CA8FF",
+    institution: detectedAccount.institution,
+    lastFour: detectedAccount.lastFour ?? "----",
+    name: detectedAccount.name
+  });
+};
+
+const reassignDraftAccount = (
+  transaction: ParsedTransactionDraft,
+  account: MoneyAccount
+): ParsedTransactionDraft => ({
+  ...transaction,
+  accountId: account.id,
+  accountName: account.name,
+  duplicateHash: createTransactionDuplicateHash({
+    accountId: account.id,
+    amount: transaction.amount,
+    date: transaction.date,
+    merchant: transaction.merchant
+  })
+});
+
+const applyAccountToParseResult = (
+  result: StatementParseResult,
+  account: MoneyAccount
+): StatementParseResult => ({
+  ...result,
+  transactions: result.transactions.map((transaction) => reassignDraftAccount(transaction, account)),
+  duplicates: result.duplicates.map((transaction) => ({
+    ...reassignDraftAccount(transaction, account),
+    duplicateReason: transaction.duplicateReason
+  }))
+});
+
+const applyKnownDuplicateHashes = (
+  result: StatementParseResult,
+  knownDuplicateHashes: Set<string>
+): StatementParseResult => {
+  const newDuplicates = result.transactions
+    .filter((transaction) => knownDuplicateHashes.has(transaction.duplicateHash))
+    .map((transaction) => ({
+      ...transaction,
+      duplicateReason: "previous_import" as const
+    }));
+  const newTransactions = result.transactions.filter(
+    (transaction) => !knownDuplicateHashes.has(transaction.duplicateHash)
+  );
+  const existingDuplicateKeys = new Set(result.duplicates.map((duplicate) => duplicate.duplicateHash));
+  const duplicates = [
+    ...result.duplicates,
+    ...newDuplicates.filter((duplicate) => !existingDuplicateKeys.has(duplicate.duplicateHash))
+  ];
+
+  return {
+    ...result,
+    duplicates,
+    summary: {
+      ...result.summary,
+      duplicatesSkipped: duplicates.length,
+      newTransactions: newTransactions.length,
+      totalFound: newTransactions.length + duplicates.length
+    },
+    transactions: newTransactions
+  };
+};
+
+const isValidImportAmount = (transaction: ParsedTransactionDraft) =>
+  Number.isFinite(transaction.amount) && Math.round(Math.abs(transaction.amount) * 100) > 0;
+
+const removeInvalidAmountRows = (result: StatementParseResult): StatementParseResult => {
+  const invalidRows = result.transactions.filter((transaction) => !isValidImportAmount(transaction));
+
+  if (invalidRows.length === 0) {
+    return result;
+  }
+
+  const transactions = result.transactions.filter(isValidImportAmount);
+  const failedRows = [
+    ...result.failedRows,
+    ...invalidRows.map((transaction) => ({
+      message: "Amount could not be read for this row.",
+      raw: transaction.raw,
+      rowNumber: transaction.rowNumber
+    }))
+  ];
+
+  return {
+    ...result,
+    failedRows,
+    summary: {
+      ...result.summary,
+      failedRows: failedRows.length,
+      newTransactions: transactions.length,
+      totalFound: transactions.length + result.duplicates.length
+    },
+    transactions
+  };
+};
+
+const AlreadyUploadedModal = ({
+  onOk,
+  visible
+}: {
+  onOk: () => void;
+  visible: boolean;
+}) => {
+  const { accentColor, accentSoft } = useAppearanceTheme();
+
+  return (
+    <Modal animationType="fade" onRequestClose={onOk} transparent visible={visible}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHandle} />
+          <View style={styles.alreadyUploadedContent}>
+            <View style={[styles.modalIcon, { backgroundColor: accentSoft }]}>
+              <CheckCircle2 color={accentColor} size={28} strokeWidth={2.7} />
+            </View>
+            <Text style={styles.alreadyUploadedTitle}>Statement Already Uploaded</Text>
+            <Text style={styles.alreadyUploadedText}>
+              This statement’s transactions are already in your timeline. Please upload a new
+              statement.
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOk}
+            style={({ pressed }) => [
+              styles.modalConfirmButton,
+              { backgroundColor: accentColor },
+              pressed && styles.pressed
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const ImportSummaryModal = ({
+  accountName,
+  errorMessage,
+  onClose,
+  onConfirm,
+  result,
+  saveStatus,
+  visible
+}: {
+  accountName: string;
+  errorMessage: string | null;
+  onClose: () => void;
+  onConfirm: () => void;
+  result: StatementParseResult | null;
+  saveStatus: SaveStatus;
+  visible: boolean;
+}) => {
+  const { accentColor, accentSoft } = useAppearanceTheme();
+
+  if (!result) {
+    return null;
+  }
+
+  const paymentCount = result.transactions.filter(
+    (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+  ).length;
+  const expenseCount = result.transactions.filter((transaction) => transaction.kind === "expense")
+    .length;
+  const dateRange = getDateRangeLabel(result.transactions.map(toSaveableTransaction));
+  const confirmDisabled = result.transactions.length === 0 || saveStatus === "saving";
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <View style={[styles.modalIcon, { backgroundColor: accentSoft }]}>
+              <ReceiptText color={accentColor} size={25} strokeWidth={2.5} />
+            </View>
+            <View style={styles.modalTitleWrap}>
+              <Text style={[styles.summaryEyebrow, { color: accentColor }]}>Import Summary</Text>
+              <Text style={styles.modalTitle}>Ready to add transactions</Text>
+              <Text style={styles.modalMeta}>{accountName} - {dateRange}</Text>
+            </View>
+            <Pressable
+              accessibilityLabel="Close import summary"
+              accessibilityRole="button"
+              disabled={saveStatus === "saving"}
+              onPress={onClose}
+              style={({ pressed }) => [styles.modalClose, pressed && styles.pressed]}
+            >
+              <X color={colors.textSecondary} size={18} />
+            </Pressable>
+          </View>
+
+          <View style={styles.modalStats}>
+            <SummaryRow label="Total found" value={result.summary.totalFound} />
+            <SummaryRow label="New transactions" tone="accent" value={result.summary.newTransactions} />
+            <SummaryRow label="Expenses" value={expenseCount} />
+            <SummaryRow label="Payments / transfers" tone="muted" value={paymentCount} />
+            <SummaryRow label="Duplicates skipped" tone="warning" value={result.summary.duplicatesSkipped} />
+            <SummaryRow
+              label="Failed rows"
+              tone={result.summary.failedRows > 0 ? "danger" : "muted"}
+              value={result.summary.failedRows}
+            />
+          </View>
+
+          {result.detectedAccount ? (
+            <View style={styles.detectedAccountCard}>
+              <WalletCards color={accentColor} size={17} />
+              <View style={styles.detectedAccountCopy}>
+                <Text style={styles.detectedAccountTitle}>
+                  Detected {result.detectedAccount.name}
+                </Text>
+                <Text style={styles.detectedAccountText}>
+                  {result.detectedAccount.lastFour
+                    ? `${result.detectedAccount.accountType} ending ${result.detectedAccount.lastFour}`
+                    : `${result.detectedAccount.accountType} source matched automatically`}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {errorMessage ? (
+            <View style={styles.errorCard}>
+              <AlertCircle color={colors.danger} size={18} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={confirmDisabled}
+            onPress={onConfirm}
+            style={({ pressed }) => [
+              styles.modalConfirmButton,
+              { backgroundColor: accentColor },
+              confirmDisabled && styles.primaryButtonDisabled,
+              pressed && !confirmDisabled && styles.pressed
+            ]}
+          >
+            {saveStatus === "saving" ? (
+              <ActivityIndicator color={colors.background} size="small" />
+            ) : (
+              <CheckCircle2 color={colors.background} size={19} strokeWidth={2.7} />
+            )}
+            <Text style={styles.primaryButtonText}>
+              {saveStatus === "saving" ? "Saving Import" : "Confirm Import"}
             </Text>
           </Pressable>
         </View>
       </View>
-    </Screen>
+    </Modal>
   );
 };
 
@@ -590,6 +1134,22 @@ const ImportSummaryCard = ({ result }: { result: StatementParseResult }) => {
         tone={summary.failedRows > 0 ? "danger" : "muted"}
         value={summary.failedRows}
       />
+
+      {result.detectedAccount ? (
+        <View style={styles.detectedAccountCard}>
+          <WalletCards color={accentColor} size={17} />
+          <View style={styles.detectedAccountCopy}>
+            <Text style={styles.detectedAccountTitle}>
+              Detected {result.detectedAccount.name}
+            </Text>
+            <Text style={styles.detectedAccountText}>
+              {result.detectedAccount.lastFour
+                ? `${result.detectedAccount.accountType} ending ${result.detectedAccount.lastFour}`
+                : `${result.detectedAccount.accountType} source matched automatically`}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       {result.duplicates.length > 0 ? (
         <View style={styles.duplicatesPreview}>
@@ -1048,6 +1608,125 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
     lineHeight: 20
+  },
+  detectedAccountCard: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(92, 168, 255, 0.24)",
+    backgroundColor: "rgba(92, 168, 255, 0.1)",
+    marginTop: spacing.sm,
+    padding: spacing.md
+  },
+  detectedAccountCopy: {
+    minWidth: 0,
+    flex: 1
+  },
+  detectedAccountTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  detectedAccountText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    padding: spacing.md
+  },
+  modalCard: {
+    gap: spacing.md,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(17, 25, 35, 0.98)",
+    padding: spacing.md
+  },
+  modalHandle: {
+    width: 42,
+    height: 4,
+    alignSelf: "center",
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.16)"
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  modalIcon: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 24
+  },
+  modalTitleWrap: {
+    minWidth: 0,
+    flex: 1
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 23
+  },
+  modalMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 2
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.06)"
+  },
+  modalStats: {
+    gap: spacing.xs,
+    borderRadius: radii.lg,
+    backgroundColor: "rgba(5, 8, 13, 0.38)",
+    padding: spacing.md
+  },
+  modalConfirmButton: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg
+  },
+  alreadyUploadedContent: {
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm
+  },
+  alreadyUploadedTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 26,
+    textAlign: "center"
+  },
+  alreadyUploadedText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    textAlign: "center"
   },
   failedRowsPreview: {
     gap: spacing.sm,

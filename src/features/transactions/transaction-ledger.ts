@@ -19,6 +19,7 @@ export type Transaction = {
   description: string;
   duplicateHash: string;
   id: string;
+  importBatchId?: string | null;
   kind: TransactionKind;
   merchant: string;
   splitConnection: string | null;
@@ -68,6 +69,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Flight with Alex and Jordan",
     duplicateHash: "chase-sapphire-2026-05-01-vegas-trip-33210",
     id: "txn_20260501_vegas_trip",
+    importBatchId: null,
     kind: "expense",
     merchant: "Vegas Trip",
     splitConnection: "Vegas Trip",
@@ -83,7 +85,8 @@ export const defaultTransactions: Transaction[] = [
     date: "2026-05-02",
     description: "Morning coffee",
     duplicateHash: "amex-gold-2026-05-02-starbucks-560",
-    id: "txn_20260502_starbucks",
+   id: "txn_20260502_starbucks",
+    importBatchId: null,
     kind: "expense",
     merchant: "Starbucks",
     splitConnection: null,
@@ -100,6 +103,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Split with 3 people",
     duplicateHash: "wells-checking-2026-05-03-dinner-with-friends-6840",
     id: "txn_20260503_dinner_with_friends",
+    importBatchId: null,
     kind: "expense",
     merchant: "Dinner with friends",
     splitConnection: "Apartment Crew",
@@ -116,6 +120,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Household basics",
     duplicateHash: "chase-sapphire-2026-05-05-target-4218",
     id: "txn_20260505_target",
+    importBatchId: null,
     kind: "expense",
     merchant: "Target",
     splitConnection: null,
@@ -132,6 +137,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Late night ride",
     duplicateHash: "chase-sapphire-2026-05-07-uber-1875",
     id: "txn_20260507_uber",
+    importBatchId: null,
     kind: "expense",
     merchant: "Uber",
     splitConnection: null,
@@ -148,6 +154,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Needs review",
     duplicateHash: "chase-sapphire-2026-05-09-chipotle-6420",
     id: "txn_20260509_chipotle",
+    importBatchId: null,
     kind: "expense",
     merchant: "Chipotle",
     splitConnection: null,
@@ -164,6 +171,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Coffee after gym",
     duplicateHash: "amex-gold-2026-05-11-starbucks-645",
     id: "txn_20260511_starbucks",
+    importBatchId: null,
     kind: "expense",
     merchant: "Starbucks",
     splitConnection: null,
@@ -180,6 +188,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Apartment supplies",
     duplicateHash: "chase-sapphire-2026-05-11-amazon-8999",
     id: "txn_20260511_amazon",
+    importBatchId: null,
     kind: "expense",
     merchant: "Amazon",
     splitConnection: "Apartment Crew",
@@ -196,6 +205,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Shared dinner ingredients",
     duplicateHash: "wells-checking-2026-05-11-whole-foods-4730",
     id: "txn_20260511_whole_foods",
+    importBatchId: null,
     kind: "expense",
     merchant: "Whole Foods",
     splitConnection: "Apartment Crew",
@@ -212,6 +222,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Monthly subscription",
     duplicateHash: "chase-sapphire-2026-05-11-netflix-1299",
     id: "txn_20260511_netflix",
+    importBatchId: null,
     kind: "expense",
     merchant: "Netflix",
     splitConnection: null,
@@ -228,6 +239,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Needs review",
     duplicateHash: "chase-sapphire-2026-05-12-uber-eats-2410",
     id: "txn_20260512_uber_eats",
+    importBatchId: null,
     kind: "expense",
     merchant: "Uber Eats",
     splitConnection: null,
@@ -244,6 +256,7 @@ export const defaultTransactions: Transaction[] = [
     description: "Bulk groceries",
     duplicateHash: "amex-gold-2026-05-12-costco-8245",
     id: "txn_20260512_costco",
+    importBatchId: null,
     kind: "expense",
     merchant: "Costco",
     splitConnection: null,
@@ -498,7 +511,7 @@ const toLedgerTransaction = (
     kind === "payment" ? -(transaction.amount_minor / 100) : transaction.amount_minor / 100;
 
   return {
-    account: "Imported account",
+    account: readMetadataString(transaction.metadata, "import_account_name") ?? "Imported account",
     amount,
     category:
       readMetadataString(transaction.metadata, "import_category") ??
@@ -516,6 +529,7 @@ const toLedgerTransaction = (
     description: transaction.description ?? transaction.original_description ?? "",
     duplicateHash: transaction.duplicate_hash,
     id: transaction.id,
+    importBatchId: readMetadataString(transaction.metadata, "import_batch_id"),
     kind,
     merchant: transaction.merchant,
     splitConnection: readMetadataString(transaction.metadata, "split_connection"),

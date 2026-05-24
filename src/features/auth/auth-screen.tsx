@@ -11,7 +11,7 @@ import {
   UserRound,
   Utensils
 } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -25,7 +25,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useAuth } from "@/features/auth/auth-provider";
 import { authService } from "@/features/auth/auth-service";
 import { colors, radii, spacing } from "@/styles/theme";
 
@@ -53,7 +52,6 @@ const normalizeAuthError = (message: string) => {
 
 export const AuthScreen = ({ mode }: AuthScreenProps) => {
   const router = useRouter();
-  const { isLoading: isAuthLoading, session } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -63,12 +61,6 @@ export const AuthScreen = ({ mode }: AuthScreenProps) => {
   const [error, setError] = useState("");
 
   const isSignup = mode === "signup";
-
-  useEffect(() => {
-    if (!isAuthLoading && session) {
-      router.replace("/calendar");
-    }
-  }, [isAuthLoading, router, session]);
 
   const validationMessage = useMemo(() => {
     if (isSignup && fullName.trim().length > 0 && fullName.trim().length < 2) {
