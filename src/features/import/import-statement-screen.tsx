@@ -451,6 +451,12 @@ export const ImportStatementScreen = () => {
         user && parseResult.transactions.length > 0
           ? await saveReviewedImportToSupabase({
               importJobId: useImportSessionStore.getState().session?.importJobId,
+              summary: {
+                duplicateRows: parseResult.summary.duplicatesSkipped,
+                failedRows: parseResult.summary.failedRows,
+                parsedRows: parseResult.summary.totalFound,
+                totalRows: parseResult.summary.totalFound + parseResult.summary.failedRows
+              },
               transactions,
               uploadedFileId: useImportSessionStore.getState().session?.uploadedFileId,
               userId: user.id

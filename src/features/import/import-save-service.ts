@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { isSupabaseConfigured } from "@/config/env";
 import type { ParsedTransactionKind } from "@/features/import/statement-parser";
+import { importHistoryService } from "@/services/supabase/import-history-service";
 import { transactionService, type TransactionInput } from "@/services/supabase/transaction-service";
 
 export type SaveableImportTransaction = {
@@ -22,6 +23,13 @@ export type SavedImportBatch = {
   id: string;
   importedAt: string;
   transactions: SaveableImportTransaction[];
+};
+
+export type SaveImportSummary = {
+  duplicateRows: number;
+  failedRows: number;
+  parsedRows: number;
+  totalRows: number;
 };
 
 const importedTransactionsKey = "moneytimeline.importedTransactions.v1";
@@ -109,11 +117,13 @@ const getImportDisplayMerchant = (transaction: SaveableImportTransaction) => {
 
 export const saveReviewedImportToSupabase = async ({
   importJobId,
+  summary,
   transactions,
   uploadedFileId,
   userId
 }: {
   importJobId?: string | null;
+  summary?: SaveImportSummary;
   transactions: SaveableImportTransaction[];
   uploadedFileId?: string | null;
   userId: string;
@@ -147,10 +157,22 @@ export const saveReviewedImportToSupabase = async ({
   }));
 
   const savedTransactions = await transactionService.createMany(userId, transactionInputs);
+  const savedCount = savedTransactions?.length ?? transactions.length;
+
+  if (importJobId) {
+    await importHistoryService.updateImportJobSummary({
+      duplicateRows: summary?.duplicateRows ?? 0,
+      failedRows: summary?.failedRows ?? 0,
+      importJobId,
+      importedRows: savedCount,
+      parsedRows: summary?.parsedRows ?? transactions.length,
+      totalRows: summary?.totalRows ?? transactions.length
+    });
+  }
 
   return {
     batchId,
-    savedCount: savedTransactions?.length ?? transactions.length,
+    savedCount,
     transactions
   };
 };

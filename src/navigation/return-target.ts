@@ -3,6 +3,7 @@ import type { Href } from "expo-router";
 export type ReturnTarget =
   | "accounts"
   | "calendar"
+  | "dataImport"
   | "groups"
   | "import"
   | "insights"
@@ -14,6 +15,7 @@ export type ReturnTarget =
 const returnTargetRoutes: Record<ReturnTarget, Href> = {
   accounts: "/accounts",
   calendar: "/calendar",
+  dataImport: "/data-import",
   groups: "/groups",
   import: "/import",
   insights: "/insights",
@@ -26,6 +28,7 @@ const returnTargetRoutes: Record<ReturnTarget, Href> = {
 const returnTargetLabels: Record<ReturnTarget, string> = {
   accounts: "Accounts",
   calendar: "Calendar",
+  dataImport: "Data & Import",
   groups: "Groups",
   import: "Import",
   insights: "Insights",
@@ -69,6 +72,10 @@ export const getReturnTargetForPathname = (pathname: string): ReturnTarget => {
 
   if (pathname.startsWith("/settings")) {
     return "settings";
+  }
+
+  if (pathname.startsWith("/data-import")) {
+    return "dataImport";
   }
 
   if (pathname.startsWith("/accounts")) {

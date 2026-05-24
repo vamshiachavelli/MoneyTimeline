@@ -45,6 +45,7 @@ import {
   useLedgerTransactions
 } from "@/features/transactions/transaction-ledger";
 import { withReturnTo } from "@/navigation/return-target";
+import { importHistoryService } from "@/services/supabase/import-history-service";
 import { colors, radii, spacing } from "@/styles/theme";
 
 type SettingRowProps = {
@@ -53,6 +54,11 @@ type SettingRowProps = {
   route?: Href;
   subtitle: string;
   title: string;
+};
+
+type SettingsImportSummary = {
+  fileName: string;
+  rows: number;
 };
 
 const rows: SettingRowProps[] = [
@@ -85,7 +91,7 @@ const rows: SettingRowProps[] = [
   {
     color: "#D99A10",
     icon: UploadCloud,
-    route: "/import",
+    route: "/data-import",
     subtitle: "Import history, auto-merge, parsing",
     title: "Data & Import"
   },
@@ -135,7 +141,7 @@ const getProfileName = (email: string, metadataName?: unknown) => {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { isConfigured, user } = useAuth();
+  const { isConfigured, isLoading: isAuthLoading, user } = useAuth();
   const accounts = useAccountsStore((state) => state.accounts);
   const loadAccounts = useAccountsStore((state) => state.loadAccounts);
   const ledgerTransactions = useLedgerTransactions();
@@ -143,7 +149,7 @@ export default function SettingsScreen() {
   const loadAppearance = useAppearanceSettingsStore((state) => state.loadAppearance);
   const profile = useProfileSettingsStore((state) => state.profile);
   const loadProfile = useProfileSettingsStore((state) => state.loadProfile);
-  const [importBatches, setImportBatches] = useState<SavedImportBatch[]>([]);
+  const [importBatches, setImportBatches] = useState<SettingsImportSummary[]>([]);
   const [isLoadingImports, setIsLoadingImports] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notice, setNotice] = useState("");
@@ -157,7 +163,31 @@ export default function SettingsScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    getSavedImportBatches()
+    if (isAuthLoading) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const loadImportSummary = async () => {
+      if (user) {
+        const remoteItems = await importHistoryService.listForUser(user.id);
+
+        return remoteItems.map((item) => ({
+          fileName: item.fileName,
+          rows: item.importedRows
+        }));
+      }
+
+      const localItems: SavedImportBatch[] = await getSavedImportBatches();
+
+      return localItems.map((item) => ({
+        fileName: item.fileName,
+        rows: item.transactions.length
+      }));
+    };
+
+    loadImportSummary()
       .then((batches) => {
         if (isMounted) {
           setImportBatches(batches);
@@ -177,7 +207,7 @@ export default function SettingsScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthLoading, user?.id]);
 
   useEffect(() => {
     if (!notice) {
@@ -243,7 +273,7 @@ export default function SettingsScreen() {
   );
   const totalImportedTransactions = useMemo(
     () =>
-      importBatches.reduce((sum, batch) => sum + batch.transactions.length, 0),
+      importBatches.reduce((sum, batch) => sum + batch.rows, 0),
     [importBatches]
   );
   const latestImport = importBatches[0] ?? null;
@@ -375,12 +405,12 @@ export default function SettingsScreen() {
                 icon={Clock3}
                 meta={
                   latestImport
-                    ? `${latestImport.fileName} - ${latestImport.transactions.length} rows`
+                    ? `${latestImport.fileName} - ${latestImport.rows} rows`
                     : isLoadingImports
                       ? "Checking saved imports"
                       : "No statements imported yet"
                 }
-                onPress={() => router.push(withReturnTo("/import", "settings"))}
+                onPress={() => router.push(withReturnTo("/data-import", "settings"))}
                 title="Import history"
                 value={`${importBatches.length} statements`}
               />
