@@ -12,6 +12,60 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Payments / Transfers Polish
+
+Status: `Done`
+
+Started: 2026-05-25
+
+Goal:
+- Make payments and transfers visibly different from normal expenses across Timeline, Calendar day details, and Transaction Detail.
+- Clarify that payments/transfers are money movement records and are not split eligible.
+- Keep spend totals focused on actual expenses.
+
+Progress Log:
+- 2026-05-25: Started after user approved the next task.
+- 2026-05-25: Reviewed Timeline, Calendar day sheet, Transaction Detail, and import completion behavior.
+- 2026-05-25: Added money-movement visual treatment to Timeline payment/transfer cards.
+- 2026-05-25: Added Calendar day sheet copy explaining payments/transfers are not split eligible.
+- 2026-05-25: Added a Transaction Detail notice explaining payments/transfers are account reconciliation records, not spend.
+- 2026-05-25: User approved the direction but asked payment cards to look more visually different from normal expense cards.
+- 2026-05-25: Updated Timeline payment/transfer cards with a taller blue-tinted surface, left accent rail, and `Money movement` eyebrow.
+- 2026-05-25: User requested Calendar Personal swipe not show a review/undo popup because there is nothing to review.
+- 2026-05-25: User confirmed the real issue was row press firing after swipe and opening Transaction Detail.
+- 2026-05-25: User found Shared swipe applies the Shared tag before the split flow is confirmed.
+
+Issues Found:
+- Payments/transfers are already excluded from spend totals, but the UI still presents them too similarly to expenses.
+- Transaction Detail mentions excluded totals, but the copy is buried in a generic info row.
+- Calendar day sheet disables swipe for payments/transfers, but does not explain why.
+- Timeline money-movement cards still share too much of the normal transaction card silhouette.
+- Calendar currently shows the classification undo toast for Personal swipes, which feels like an unnecessary popup in the fast review flow.
+- Calendar swipe release can still trigger row press, opening Transaction Detail immediately after marking Personal.
+- Calendar Shared swipe updates transaction classification before split confirmation, leaving a false Shared tag if the user backs out.
+
+Changes Made:
+- Updated `src/features/timeline/timeline-feed-screen.tsx`.
+- Updated `src/features/calendar/calendar-home-screen.tsx`.
+- Updated `src/features/transactions/transaction-detail-screen.tsx`.
+- Updated Calendar classification behavior so Personal swipe no longer shows the undo/review toast.
+- Added a short post-swipe press guard so Calendar row taps do not fire immediately after a completed swipe.
+- Updated Calendar Shared swipe to open the split starter without persisting `shared` classification until the split is saved.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Timeline payment/transfer rows show `Money movement` and `excluded from spend`.
+- Browser check: Transaction Detail for a payment shows the money movement notice and explains it is not split eligible.
+- Browser check: Calendar March 2 day sheet shows `Not split eligible` for payment/transfer rows.
+- Browser check: Timeline payment/transfer card label remains visible after the distinct card styling update.
+- `npm run typecheck` passed after removing the Personal swipe toast.
+- `npm run typecheck` passed after deferring Shared classification until split save.
+
+Approval:
+- 2026-05-25: User tested and approved Payments / Transfers polish and Calendar split confirmation behavior.
+
+## Previous Task
+
 ### Import Detail Page
 
 Status: `Needs Review`

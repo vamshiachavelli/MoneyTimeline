@@ -242,6 +242,8 @@ export const CalendarHomeScreen = () => {
 
     if (nextClassification === "shared") {
       setSharedReviewTransaction({ ...transaction, classification: nextClassification });
+      setUndoState(null);
+      return;
     }
 
     if (transaction.classification === nextClassification) {
@@ -249,12 +251,7 @@ export const CalendarHomeScreen = () => {
     }
 
     void updateTransaction(transaction.id, { classification: nextClassification });
-    setUndoState({
-      createdAt: Date.now(),
-      nextClassification,
-      previousClassification: transaction.classification,
-      transaction
-    });
+    setUndoState(null);
   };
 
   const undoClassification = () => {
@@ -895,8 +892,12 @@ const SheetTransactionRow = ({
   const badgeLabel = isSpend
     ? classificationLabel[transaction.classification]
     : transactionKindLabel[transaction.kind];
+  const metaText = isSpend
+    ? `${transaction.time} - ${transaction.category} - ${transaction.account}`
+    : `${transaction.account} - Money movement`;
   const translateX = useRef(new Animated.Value(0)).current;
   const latestDragX = useRef(0);
+  const didCompleteSwipe = useRef(false);
   const actionOpacity = translateX.interpolate({
     extrapolate: "clamp",
     inputRange: [-16, 0, 16],
@@ -914,8 +915,12 @@ const SheetTransactionRow = ({
   };
 
   const completeSwipe = (classification: Classification) => {
+    didCompleteSwipe.current = true;
     onClassify(classification);
     resetSwipe();
+    setTimeout(() => {
+      didCompleteSwipe.current = false;
+    }, 350);
   };
 
   const panResponder = useRef(
@@ -961,9 +966,16 @@ const SheetTransactionRow = ({
         <Pressable
           accessibilityLabel={`Open ${transaction.merchant} transaction detail`}
           accessibilityRole="button"
-          onPress={onPress}
+          onPress={() => {
+            if (didCompleteSwipe.current) {
+              return;
+            }
+
+            onPress();
+          }}
           style={({ pressed }) => [
             styles.sheetTransactionRow,
+            !isSpend && [styles.sheetTransactionRowMoneyMovement, { borderColor: `${tone}36` }],
             pressed && styles.pressed
           ]}
         >
@@ -975,8 +987,13 @@ const SheetTransactionRow = ({
               {transaction.merchant}
             </Text>
             <Text numberOfLines={1} style={styles.sheetMeta}>
-              {transaction.time} - {transaction.category} - {transaction.account}
+              {metaText}
             </Text>
+            {!isSpend ? (
+              <Text numberOfLines={1} style={[styles.sheetMovementMeta, { color: tone }]}>
+                Not split eligible
+              </Text>
+            ) : null}
           </View>
           <View style={styles.sheetAmountBlock}>
             <Text style={styles.sheetAmount}>{formatTransactionAmount(transaction)}</Text>
@@ -1545,6 +1562,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#0A1018",
     paddingHorizontal: spacing.md
   },
+  sheetTransactionRowMoneyMovement: {
+    backgroundColor: "rgba(92, 168, 255, 0.08)"
+  },
   sheetTransactionIcon: {
     width: 38,
     height: 38,
@@ -1567,6 +1587,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     lineHeight: 16
+  },
+  sheetMovementMeta: {
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 14
   },
   sheetAmount: {
     color: colors.textPrimary,

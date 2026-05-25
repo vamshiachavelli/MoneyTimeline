@@ -524,11 +524,15 @@ const TimelineTransactionCard = ({
   transaction: Transaction;
 }) => {
   const isSpend = isSpendTransaction(transaction);
+  const isMoneyMovement = !isSpend;
   const tone = getTransactionTone(transaction);
   const Icon = isSpend ? classificationIcon[transaction.classification] : CreditCard;
   const statusLabel = isSpend
     ? classificationLabel[transaction.classification]
     : transactionKindLabel[transaction.kind];
+  const metaText = isMoneyMovement
+    ? `${transaction.account} - Money movement - Not split eligible`
+    : `${transaction.time} - ${transaction.category} - ${transaction.account}`;
 
   return (
     <Pressable
@@ -536,25 +540,46 @@ const TimelineTransactionCard = ({
       onPress={onPress}
       style={({ pressed }) => [
         styles.transactionCard,
-        { backgroundColor: cardColor },
+        isMoneyMovement && [
+          styles.transactionCardMoneyMovement,
+          {
+            backgroundColor: "rgba(22, 39, 58, 0.92)",
+            borderColor: `${tone}45`,
+            shadowColor: tone
+          }
+        ],
+        !isMoneyMovement && { backgroundColor: cardColor },
         pressed && [
           styles.cardPressed,
-          { borderColor: `${accentColor}33`, backgroundColor: cardColor }
+          {
+            borderColor: isMoneyMovement ? `${tone}66` : `${accentColor}33`,
+            backgroundColor: isMoneyMovement ? "rgba(25, 50, 76, 0.96)" : cardColor
+          }
         ]
       ]}
     >
+      {isMoneyMovement ? <View style={[styles.moneyMovementRail, { backgroundColor: tone }]} /> : null}
       <View style={styles.transactionMarker}>
-        <View style={[styles.transactionIcon, { backgroundColor: `${tone}24` }]}>
+        <View
+          style={[
+            styles.transactionIcon,
+            { backgroundColor: `${tone}${isMoneyMovement ? "2E" : "24"}` },
+            isMoneyMovement && { borderColor: `${tone}42` }
+          ]}
+        >
           <Icon color={tone} size={18} strokeWidth={2.5} />
         </View>
       </View>
 
       <View style={styles.transactionCopy}>
+        {isMoneyMovement ? (
+          <Text style={[styles.moneyMovementEyebrow, { color: tone }]}>Money movement</Text>
+        ) : null}
         <Text numberOfLines={1} style={styles.transactionMerchant}>
           {transaction.merchant}
         </Text>
         <Text numberOfLines={1} style={styles.transactionMeta}>
-          {transaction.time} - {transaction.category} - {transaction.account}
+          {metaText}
         </Text>
         <View style={styles.statusRow}>
           <View style={[styles.statusPill, { backgroundColor: `${tone}18` }]}>
@@ -562,6 +587,11 @@ const TimelineTransactionCard = ({
               {statusLabel}
             </Text>
           </View>
+          {isMoneyMovement ? (
+            <Text numberOfLines={1} style={[styles.splitText, { color: tone }]}>
+              excluded from spend
+            </Text>
+          ) : null}
           {transaction.splitConnection ? (
             <Text numberOfLines={1} style={styles.splitText}>
               {transaction.splitConnection}
@@ -571,7 +601,9 @@ const TimelineTransactionCard = ({
       </View>
 
       <View style={styles.amountBlock}>
-        <Text style={styles.transactionAmount}>{formatTransactionAmount(transaction)}</Text>
+        <Text style={[styles.transactionAmount, isMoneyMovement && { color: tone }]}>
+          {formatTransactionAmount(transaction)}
+        </Text>
         <ChevronRight color={colors.textMuted} size={17} strokeWidth={2.5} />
       </View>
     </Pressable>
@@ -893,6 +925,29 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.08)",
     backgroundColor: "rgba(17, 25, 35, 0.82)",
     padding: spacing.md
+  },
+  transactionCardMoneyMovement: {
+    minHeight: 96,
+    overflow: "hidden",
+    borderStyle: "solid",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 22
+  },
+  moneyMovementRail: {
+    position: "absolute",
+    top: 12,
+    bottom: 12,
+    left: 0,
+    width: 4,
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4
+  },
+  moneyMovementEyebrow: {
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 13,
+    textTransform: "uppercase"
   },
   settlementCard: {
     borderRadius: radii.xl,

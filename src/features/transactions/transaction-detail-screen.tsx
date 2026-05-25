@@ -879,12 +879,15 @@ export const TransactionDetailScreen = () => {
                 />
               </>
             ) : (
-              <InfoRow
-                icon={CreditCard}
-                label="Import type"
-                tone={statusColor}
-                value={`${statusLabel} - excluded from spending totals and split review`}
-              />
+              <>
+                <MoneyMovementNotice statusLabel={statusLabel} tone={statusColor} />
+                <InfoRow
+                  icon={CreditCard}
+                  label="Import type"
+                  tone={statusColor}
+                  value={`${statusLabel} - excluded from spending totals and split review`}
+                />
+              </>
             )}
 
             {isSpend && form.classification === "shared" ? (
@@ -1945,6 +1948,27 @@ const InfoTile = ({
   );
 };
 
+const MoneyMovementNotice = ({
+  statusLabel,
+  tone
+}: {
+  statusLabel: string;
+  tone: string;
+}) => (
+  <View style={[styles.moneyMovementNotice, { borderColor: `${tone}33` }]}>
+    <View style={[styles.moneyMovementIcon, { backgroundColor: `${tone}1F` }]}>
+      <CreditCard color={tone} size={18} strokeWidth={2.6} />
+    </View>
+    <View style={styles.moneyMovementCopy}>
+      <Text style={styles.moneyMovementTitle}>Money movement</Text>
+      <Text style={styles.moneyMovementText}>
+        {statusLabel} records help reconcile accounts, but they are not split eligible and do not
+        count as spend.
+      </Text>
+    </View>
+  </View>
+);
+
 const InfoRow = ({
   icon: Icon,
   label,
@@ -2799,6 +2823,40 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: "rgba(5, 8, 13, 0.46)",
     paddingHorizontal: spacing.md
+  },
+  moneyMovementNotice: {
+    minHeight: 82,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    backgroundColor: "rgba(92, 168, 255, 0.08)",
+    padding: spacing.md
+  },
+  moneyMovementIcon: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 19
+  },
+  moneyMovementCopy: {
+    minWidth: 0,
+    flex: 1,
+    gap: 3
+  },
+  moneyMovementTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  moneyMovementText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
   },
   infoRowIcon: {
     width: 36,
