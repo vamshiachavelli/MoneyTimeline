@@ -38,13 +38,13 @@ import { withReturnTo } from "@/navigation/return-target";
 
 type HistoryItem = {
   accountName: string | null;
-  duplicateRows: number;
-  failedRows: number;
+  expenseCount: number;
   fileName: string;
   fileType: string;
   id: string;
   importedAt: string;
   importedRows: number;
+  paymentTransferCount: number;
   source: "local" | "supabase";
   status: string;
   totalRows: number;
@@ -52,6 +52,7 @@ type HistoryItem = {
     amount: number;
     date: string;
     id: string;
+    kind: string;
     merchant: string;
   }[];
 };
@@ -79,13 +80,15 @@ const toTitle = (value: string) =>
 const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
   items.map((item) => ({
     accountName: item.accountName,
-    duplicateRows: item.duplicateRows,
-    failedRows: item.failedRows,
+    expenseCount: item.transactions.filter((transaction) => transaction.kind === "expense").length,
     fileName: item.fileName,
     fileType: item.fileType.toUpperCase(),
     id: item.id,
     importedAt: item.importedAt,
     importedRows: item.importedRows,
+    paymentTransferCount: item.transactions.filter(
+      (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+    ).length,
     source: "supabase",
     status: item.status,
     totalRows: item.totalRows,
@@ -93,6 +96,7 @@ const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
       amount: transaction.amount_minor / 100,
       date: transaction.transaction_date,
       id: transaction.id,
+      kind: transaction.kind,
       merchant: transaction.merchant
     }))
   }));
@@ -100,13 +104,15 @@ const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
 const mapLocalHistory = (batches: SavedImportBatch[]): HistoryItem[] =>
   batches.map((batch) => ({
     accountName: batch.transactions[0]?.accountName ?? null,
-    duplicateRows: 0,
-    failedRows: 0,
+    expenseCount: batch.transactions.filter((transaction) => transaction.kind === "expense").length,
     fileName: batch.fileName,
     fileType: "LOCAL",
     id: batch.id,
     importedAt: batch.importedAt,
     importedRows: batch.transactions.length,
+    paymentTransferCount: batch.transactions.filter(
+      (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+    ).length,
     source: "local",
     status: "completed",
     totalRows: batch.transactions.length,
@@ -114,6 +120,7 @@ const mapLocalHistory = (batches: SavedImportBatch[]): HistoryItem[] =>
       amount: Math.abs(transaction.amount),
       date: transaction.date,
       id: `${batch.id}_${transaction.rowNumber}`,
+      kind: transaction.kind,
       merchant: transaction.merchant
     }))
   }));
@@ -154,12 +161,10 @@ export const DataImportScreen = () => {
     () =>
       history.reduce(
         (acc, item) => ({
-          duplicates: acc.duplicates + item.duplicateRows,
-          failed: acc.failed + item.failedRows,
           imported: acc.imported + item.importedRows,
           statements: acc.statements + 1
         }),
-        { duplicates: 0, failed: 0, imported: 0, statements: 0 }
+        { imported: 0, statements: 0 }
       ),
     [history]
   );
@@ -183,7 +188,7 @@ export const DataImportScreen = () => {
   };
 
   const openImportTimeline = (item: HistoryItem) => {
-    router.push(`/timeline?importBatchId=${item.id}` as never);
+    router.push(withReturnTo(`/import-detail/${encodeURIComponent(item.id)}`, "dataImport"));
   };
 
   return (
@@ -237,9 +242,13 @@ export const DataImportScreen = () => {
             </View>
 
             <View style={styles.metricRow}>
-              <MetricPill label="Duplicates" tone="#F5A524" value={totals.duplicates} />
-              <MetricPill label="Failed rows" tone={colors.danger} value={totals.failed} />
-              <MetricPill label="Sources" tone={accentColor} value={totals.statements} />
+              <MetricPill label="Transactions" tone={accentColor} value={totals.imported} />
+              <MetricPill label="Statements" tone="#7FA7FF" value={totals.statements} />
+              <MetricPill
+                label="Recent rows"
+                tone={colors.shared}
+                value={recentTransactions.length}
+              />
             </View>
           </LinearGradient>
 
@@ -410,8 +419,8 @@ const ImportHistoryCard = ({
 
     <View style={styles.historyStats}>
       <HistoryStat label="Imported" value={item.importedRows} />
-      <HistoryStat label="Duplicates" value={item.duplicateRows} />
-      <HistoryStat label="Failed" value={item.failedRows} />
+      <HistoryStat label="Expenses" value={item.expenseCount} />
+      <HistoryStat label="Payments" value={item.paymentTransferCount} />
     </View>
 
     <View style={styles.historyFooter}>

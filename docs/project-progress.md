@@ -12,6 +12,84 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Import Detail Page
+
+Status: `Needs Review`
+
+Started: 2026-05-24
+
+Goal:
+- Add a clean statement detail page from Data & Import.
+- Show statement name, import date, detected account, imported transaction count, expense count, payment/transfer count, and imported transaction list.
+- Keep the UI user-facing and simple: no failed rows, duplicate rows, or backend-style stats.
+
+Progress Log:
+- 2026-05-24: Started after user approved simplified Import Detail direction.
+- 2026-05-24: User clarified failed/duplicate rows are not needed in this area.
+- 2026-05-24: Added import detail route and screen.
+- 2026-05-24: Removed failed/duplicate row metrics from Data & Import overview.
+- 2026-05-24: Fixed Data & Import expense/payment counts to use the full statement, not only the recent preview rows.
+
+Issues Found:
+- Data & Import currently opens the timeline directly, so users cannot inspect one import as a clean statement summary first.
+- Data & Import still exposes failed/duplicate row metrics, which the user does not want in the product UI.
+
+Changes Made:
+- Added `app/import-detail/[id].tsx`.
+- Added `src/features/import/import-detail-screen.tsx`.
+- Updated `src/features/import/data-import-screen.tsx` so import cards open the detail page and no longer show failed/duplicate metrics.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Data & Import overview no longer shows failed/duplicate row labels.
+- Browser check: Import detail showed statement name, account, imported transaction count, expenses, payments, and transaction list.
+- Browser check: Import detail `Open in Timeline` navigated to the filtered timeline URL.
+
+Approval:
+- Waiting for implementation review.
+
+## Previous Task
+
+### Settings Account Identity / Month Spend Fix
+
+Status: `Done`
+
+Started: 2026-05-24
+
+Goal:
+- Stop demo profile data from appearing for a different signed-in account.
+- Make the Settings month spend card reflect the latest imported transaction month when the current calendar month has no imported spending.
+
+Progress Log:
+- 2026-05-24: Started after user reported Settings showing Manish/demo profile while logged into a different account.
+- 2026-05-24: Traced Settings profile data to local AsyncStorage profile settings shared across accounts.
+- 2026-05-24: Traced Settings month spend to a hard-coded current month key instead of the latest imported transaction period.
+- 2026-05-24: Implemented account-safe profile display and latest-import-month spend logic.
+- 2026-05-24: User found remaining static `12% vs last month` text in the Settings month card.
+- 2026-05-24: Replaced static month comparison with a real current-vs-previous displayed month calculation.
+
+Issues Found:
+- Local profile settings were not scoped to the signed-in email/user, so an older demo profile could override Supabase auth email-derived identity.
+- The Settings card calculated only the current device month, while Calendar and Insights already fall back to the latest imported month when current month has no transactions.
+- The month comparison label was still hardcoded as `12% vs last month`.
+
+Changes Made:
+- Added `isProfileForEmail` to `src/features/settings/profile-store.ts`.
+- Updated `app/(tabs)/settings.tsx` to ignore saved profile names/emails that do not match the signed-in account.
+- Updated `app/(tabs)/settings.tsx` to calculate Settings month spend from current month when present, otherwise the latest imported spend month.
+- Updated `app/(tabs)/settings.tsx` to calculate the month comparison percentage from imported ledger transactions.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Settings now shows signed-in account `vamshi` / `vamshiachavelli@gmail.com` instead of the older demo profile.
+- Browser check: Settings month spend now shows `$268.03` from imported transactions instead of `$0.00`.
+- Browser check: Settings month comparison now shows `-93% less than last month` instead of the static `12% vs last month`.
+
+Approval:
+- 2026-05-24: User approved the Settings identity and month spend fixes.
+
+## Previous Task
+
 ### Data & Import / Import History
 
 Status: `Done`

@@ -133,6 +133,12 @@ export const getProfileDisplayName = (profile: ProfileSettings, fallbackName: st
 export const getProfileDisplayEmail = (profile: ProfileSettings, fallbackEmail: string) =>
   profile.email.trim() || fallbackEmail;
 
+export const isProfileForEmail = (profile: ProfileSettings, email: string) => {
+  const profileEmail = profile.email.trim().toLowerCase();
+
+  return !profileEmail || profileEmail === email.trim().toLowerCase();
+};
+
 export const getProfileInitials = (name: string) => {
   const parts = name.split(" ").filter(Boolean);
   const initials = parts

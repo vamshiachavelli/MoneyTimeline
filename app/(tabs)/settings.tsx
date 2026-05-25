@@ -38,10 +38,12 @@ import {
   getProfileDisplayEmail,
   getProfileDisplayName,
   getProfileInitials,
+  isProfileForEmail,
   useProfileSettingsStore
 } from "@/features/settings/profile-store";
 import {
   formatCurrency,
+  isSpendTransaction,
   useLedgerTransactions
 } from "@/features/transactions/transaction-ledger";
 import { withReturnTo } from "@/navigation/return-target";
@@ -117,10 +119,55 @@ const rows: SettingRowProps[] = [
   }
 ];
 
-const currentMonthKey = (() => {
+const getCurrentMonthKey = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-})();
+};
+
+const getLatestTransactionMonthKey = (transactions: Array<{ date: string }>) => {
+  const latestTransaction = [...transactions].sort((a, b) => b.date.localeCompare(a.date))[0];
+
+  return latestTransaction ? latestTransaction.date.slice(0, 7) : getCurrentMonthKey();
+};
+
+const getPreviousMonthKey = (monthKey: string) => {
+  const [year, month] = monthKey.split("-").map(Number);
+  const previousMonth = new Date(year, month - 2, 1);
+
+  return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const getMonthSpend = (transactions: ReturnType<typeof useLedgerTransactions>, monthKey: string) =>
+  transactions
+    .filter(
+      (transaction) =>
+        transaction.date.startsWith(monthKey) && isSpendTransaction(transaction)
+    )
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+
+const getMonthComparison = ({
+  currentSpend,
+  previousSpend
+}: {
+  currentSpend: number;
+  previousSpend: number;
+}) => {
+  if (previousSpend <= 0 && currentSpend <= 0) {
+    return { label: "No data", value: "0%" };
+  }
+
+  if (previousSpend <= 0) {
+    return { label: "new month", value: "New" };
+  }
+
+  const change = ((currentSpend - previousSpend) / previousSpend) * 100;
+  const roundedChange = Math.round(Math.abs(change));
+
+  return {
+    label: change >= 0 ? "vs last month" : "less than last month",
+    value: `${change >= 0 ? "+" : "-"}${roundedChange}%`
+  };
+};
 
 const toTitleName = (value: string) =>
   value
@@ -219,10 +266,21 @@ export default function SettingsScreen() {
     return () => clearTimeout(timeout);
   }, [notice]);
 
-  const fallbackEmail = user?.email ?? "arjun.mehta@gmail.com";
+  const fallbackEmail = user?.email ?? "";
   const fallbackProfileName = getProfileName(fallbackEmail, user?.user_metadata?.full_name);
-  const profileEmail = getProfileDisplayEmail(profile, fallbackEmail);
-  const profileName = getProfileDisplayName(profile, fallbackProfileName);
+  const profileMatchesUser = isProfileForEmail(profile, fallbackEmail);
+  const displayProfile = profileMatchesUser
+    ? profile
+    : {
+        ...profile,
+        email: "",
+        firstName: "",
+        fullName: "",
+        lastName: "",
+        phone: ""
+      };
+  const profileEmail = getProfileDisplayEmail(displayProfile, fallbackEmail);
+  const profileName = getProfileDisplayName(displayProfile, fallbackProfileName);
   const profileInitials = getProfileInitials(profileName);
   const appearanceAccent = useMemo(
     () => getAccentOption(appearance.accent),
@@ -263,13 +321,36 @@ export default function SettingsScreen() {
       appearanceTheme.label
     ]
   );
+  const monthKey = useMemo(() => {
+    const currentMonthKey = getCurrentMonthKey();
+    const spendTransactions = ledgerTransactions.filter(isSpendTransaction);
+    const currentMonthHasSpend = spendTransactions.some((transaction) =>
+      transaction.date.startsWith(currentMonthKey)
+    );
+
+    return currentMonthHasSpend
+      ? currentMonthKey
+      : getLatestTransactionMonthKey(spendTransactions);
+  }, [ledgerTransactions]);
   const monthTransactions = useMemo(
-    () => ledgerTransactions.filter((transaction) => transaction.date.startsWith(currentMonthKey)),
-    [ledgerTransactions]
+    () =>
+      ledgerTransactions.filter(
+        (transaction) =>
+          transaction.date.startsWith(monthKey) && isSpendTransaction(transaction)
+      ),
+    [ledgerTransactions, monthKey]
   );
   const monthSpent = useMemo(
     () => monthTransactions.reduce((sum, transaction) => sum + transaction.amount, 0),
     [monthTransactions]
+  );
+  const monthComparison = useMemo(
+    () =>
+      getMonthComparison({
+        currentSpend: monthSpent,
+        previousSpend: getMonthSpend(ledgerTransactions, getPreviousMonthKey(monthKey))
+      }),
+    [ledgerTransactions, monthKey, monthSpent]
   );
   const totalImportedTransactions = useMemo(
     () =>
@@ -351,8 +432,10 @@ export default function SettingsScreen() {
               </View>
               <Sparkline color={appearanceAccent.color} />
               <View style={styles.percentBlock}>
-                <Text style={[styles.percent, { color: appearanceAccent.color }]}>12%</Text>
-                <Text style={styles.percentSub}>vs last month</Text>
+                <Text style={[styles.percent, { color: appearanceAccent.color }]}>
+                  {monthComparison.value}
+                </Text>
+                <Text style={styles.percentSub}>{monthComparison.label}</Text>
               </View>
             </View>
           </View>
