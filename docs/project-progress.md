@@ -12,6 +12,47 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Profile Sync To Supabase
+
+Status: `Done`
+
+Started: 2026-05-25
+
+Goal:
+- Load signed-in profile fields from the Supabase `profiles` table.
+- Save first name, last name, display name, and phone to Supabase.
+- Keep profile display account-specific, while preserving local avatar icon preference until we add real avatar uploads.
+
+Progress Log:
+- 2026-05-25: Started after user said to continue to the next task.
+- 2026-05-25: Confirmed the existing database has `profiles` with RLS and self-managed policies.
+- 2026-05-25: Confirmed email should stay sourced from Supabase Auth; profile table does not store editable email.
+- 2026-05-25: Added Supabase profile service for reading/upserting profile rows.
+- 2026-05-25: Made local profile cache scoped per signed-in user.
+- 2026-05-25: Wired Settings and Profile screens to hydrate from Supabase `profiles`.
+- 2026-05-25: Wired Profile save to upsert first name, last name, display name, and phone to Supabase.
+
+Issues Found:
+- Profile screen still loads and saves only local AsyncStorage profile data.
+- Settings has a local guard against stale profile email, but it does not yet hydrate profile fields from Supabase.
+- Avatar icon is app-local because the database currently supports `avatar_url`, not the local icon enum.
+
+Changes Made:
+- Added `src/services/supabase/profile-service.ts`.
+- Updated `src/features/settings/profile-store.ts`.
+- Updated `src/features/settings/profile-screen.tsx`.
+- Updated `app/(tabs)/settings.tsx`.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Settings still shows the signed-in auth account (`vamshi`, `vamshiachavelli@gmail.com`).
+- Browser check: Profile screen shows `Email from sign in`, making email source explicit.
+
+Approval:
+- 2026-05-25: User approved Profile sync to Supabase.
+
+## Previous Task
+
 ### Payments / Transfers Polish
 
 Status: `Done`

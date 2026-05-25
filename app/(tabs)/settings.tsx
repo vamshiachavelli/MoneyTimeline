@@ -39,6 +39,7 @@ import {
   getProfileDisplayName,
   getProfileInitials,
   isProfileForEmail,
+  syncProfileFromRemote,
   useProfileSettingsStore
 } from "@/features/settings/profile-store";
 import {
@@ -48,6 +49,7 @@ import {
 } from "@/features/transactions/transaction-ledger";
 import { withReturnTo } from "@/navigation/return-target";
 import { importHistoryService } from "@/services/supabase/import-history-service";
+import { profileService } from "@/services/supabase/profile-service";
 import { colors, radii, spacing } from "@/styles/theme";
 
 type SettingRowProps = {
@@ -195,6 +197,7 @@ export default function SettingsScreen() {
   const appearance = useAppearanceSettingsStore((state) => state.appearance);
   const loadAppearance = useAppearanceSettingsStore((state) => state.loadAppearance);
   const profile = useProfileSettingsStore((state) => state.profile);
+  const hydrateProfile = useProfileSettingsStore((state) => state.hydrateProfile);
   const loadProfile = useProfileSettingsStore((state) => state.loadProfile);
   const [importBatches, setImportBatches] = useState<SettingsImportSummary[]>([]);
   const [isLoadingImports, setIsLoadingImports] = useState(true);
@@ -204,8 +207,37 @@ export default function SettingsScreen() {
   useEffect(() => {
     void loadAccounts();
     void loadAppearance();
-    void loadProfile();
-  }, [loadAccounts, loadAppearance, loadProfile]);
+    void loadProfile(user?.id);
+  }, [loadAccounts, loadAppearance, loadProfile, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !user.email) {
+      return;
+    }
+
+    let isMounted = true;
+
+    profileService
+      .getProfile(user.id)
+      .then((remoteProfile) => {
+        if (!isMounted) {
+          return;
+        }
+
+        return hydrateProfile(
+          syncProfileFromRemote({
+            authEmail: user.email ?? "",
+            currentProfile: useProfileSettingsStore.getState().profile,
+            remoteProfile
+          })
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateProfile, user?.email, user?.id]);
 
   useEffect(() => {
     let isMounted = true;

@@ -23,6 +23,7 @@ import {
   getProfileDisplayEmail,
   getProfileDisplayName,
   getProfileInitials,
+  syncProfileFromRemote,
   useProfileSettingsStore,
   type ProfileAvatarIcon
 } from "@/features/settings/profile-store";
@@ -31,6 +32,7 @@ import {
   getReturnTargetParam,
   getReturnTargetRoute
 } from "@/navigation/return-target";
+import { profileService } from "@/services/supabase/profile-service";
 import { colors, radii, spacing } from "@/styles/theme";
 
 type ProfileForm = {
@@ -98,9 +100,10 @@ export const ProfileScreen = () => {
   const returnRoute = getReturnTargetRoute(returnTarget) ?? "/settings";
   const { user } = useAuth();
   const profile = useProfileSettingsStore((state) => state.profile);
+  const hydrateProfile = useProfileSettingsStore((state) => state.hydrateProfile);
   const loadProfile = useProfileSettingsStore((state) => state.loadProfile);
   const updateProfile = useProfileSettingsStore((state) => state.updateProfile);
-  const fallbackEmail = user?.email ?? "arjun.mehta@gmail.com";
+  const fallbackEmail = user?.email ?? "";
   const fallbackName = getFallbackName(fallbackEmail, user?.user_metadata?.full_name);
   const displayName = getProfileDisplayName(profile, fallbackName);
   const displayEmail = getProfileDisplayEmail(profile, fallbackEmail);
@@ -118,8 +121,46 @@ export const ProfileScreen = () => {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+    void loadProfile(user?.id);
+  }, [loadProfile, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !user.email) {
+      return;
+    }
+
+    let isMounted = true;
+
+    profileService
+      .getProfile(user.id)
+      .then((remoteProfile) => {
+        if (!isMounted) {
+          return;
+        }
+
+        return hydrateProfile(
+          syncProfileFromRemote({
+            authEmail: user.email ?? "",
+            currentProfile: useProfileSettingsStore.getState().profile,
+            remoteProfile
+          })
+        );
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+
+        return hydrateProfile({
+          ...useProfileSettingsStore.getState().profile,
+          email: user.email ?? ""
+        });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateProfile, user?.email, user?.id]);
 
   useEffect(() => {
     setForm({
@@ -187,15 +228,32 @@ export const ProfileScreen = () => {
     }
 
     setSaveState("saving");
-    await updateProfile({
-      avatarIcon: form.avatarIcon,
-      email,
-      firstName,
-      lastName,
-      phone
-    });
-    setSaveState("saved");
-    setNotice("Profile saved.");
+
+    try {
+      if (user?.id) {
+        await profileService.upsertProfile({
+          firstName,
+          id: user.id,
+          lastName,
+          phone
+        });
+      }
+
+      await updateProfile({
+        avatarIcon: form.avatarIcon,
+        email: user?.email ?? email,
+        firstName,
+        lastName,
+        phone
+      });
+      setSaveState("saved");
+      setNotice("Profile saved.");
+    } catch (error) {
+      setSaveState("idle");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not save profile. Please try again."
+      );
+    }
   };
 
   const showImagePlaceholder = () => {
@@ -309,8 +367,9 @@ export const ProfileScreen = () => {
             </View>
             <ProfileInput
               autoCapitalize="none"
+              editable={false}
               keyboardType="email-address"
-              label="Email"
+              label="Email from sign in"
               onChangeText={(email) => updateForm({ email })}
               placeholder="you@email.com"
               value={form.email}
@@ -418,6 +477,7 @@ export const ProfileScreen = () => {
 
 const ProfileInput = ({
   autoCapitalize = "words",
+  editable = true,
   keyboardType,
   label,
   onChangeText,
@@ -425,6 +485,7 @@ const ProfileInput = ({
   value
 }: {
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  editable?: boolean;
   keyboardType?: "default" | "email-address" | "phone-pad";
   label: string;
   onChangeText: (value: string) => void;
@@ -435,11 +496,12 @@ const ProfileInput = ({
     <Text style={styles.inputLabel}>{label}</Text>
     <TextInput
       autoCapitalize={autoCapitalize}
+      editable={editable}
       keyboardType={keyboardType}
       onChangeText={onChangeText}
       placeholder={placeholder}
       placeholderTextColor={colors.textMuted}
-      style={styles.input}
+      style={[styles.input, !editable && styles.inputDisabled]}
       value={value}
     />
   </View>
@@ -630,6 +692,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 19,
     paddingHorizontal: spacing.md
+  },
+  inputDisabled: {
+    color: colors.textSecondary,
+    backgroundColor: "rgba(5, 8, 13, 0.38)"
   },
   avatarOptionRow: {
     flexDirection: "row",

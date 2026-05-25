@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 
+import type { Profile } from "@/types/database";
+
 export type ProfileSettings = {
   avatarIcon: ProfileAvatarIcon;
   email: string;
@@ -15,7 +17,9 @@ export type ProfileAvatarIcon = "initials" | "sparkles" | "trend" | "user" | "wa
 
 type ProfileSettingsState = {
   hasLoaded: boolean;
-  loadProfile: () => Promise<void>;
+  hydrateProfile: (profile: ProfileSettings) => Promise<void>;
+  loadedUserId: string | null;
+  loadProfile: (userId?: string | null) => Promise<void>;
   profile: ProfileSettings;
   updateProfile: (
     patch: Partial<
@@ -28,6 +32,8 @@ type ProfileSettingsState = {
 };
 
 const profileStorageKey = "moneytimeline.profileSettings.v1";
+const getProfileStorageKey = (userId?: string | null) =>
+  userId ? `${profileStorageKey}.${userId}` : profileStorageKey;
 
 const defaultProfile: ProfileSettings = {
   avatarIcon: "initials",
@@ -78,28 +84,37 @@ const sanitizeProfile = (value: unknown): ProfileSettings => {
   };
 };
 
-const persistProfile = async (profile: ProfileSettings) => {
-  await AsyncStorage.setItem(profileStorageKey, JSON.stringify(profile));
+const persistProfile = async (profile: ProfileSettings, userId?: string | null) => {
+  await AsyncStorage.setItem(getProfileStorageKey(userId), JSON.stringify(profile));
 };
 
 export const useProfileSettingsStore = create<ProfileSettingsState>((set, get) => ({
   hasLoaded: false,
-  loadProfile: async () => {
-    if (get().hasLoaded) {
+  hydrateProfile: async (profile) => {
+    set({ profile });
+    await persistProfile(profile, get().loadedUserId);
+  },
+  loadedUserId: null,
+  loadProfile: async (userId) => {
+    const normalizedUserId = userId ?? null;
+
+    if (get().hasLoaded && get().loadedUserId === normalizedUserId) {
       return;
     }
 
     try {
-      const stored = await AsyncStorage.getItem(profileStorageKey);
+      const stored = await AsyncStorage.getItem(getProfileStorageKey(normalizedUserId));
       const profile = stored ? sanitizeProfile(JSON.parse(stored)) : defaultProfile;
 
       set({
         hasLoaded: true,
+        loadedUserId: normalizedUserId,
         profile
       });
     } catch {
       set({
         hasLoaded: true,
+        loadedUserId: normalizedUserId,
         profile: defaultProfile
       });
     }
@@ -121,9 +136,40 @@ export const useProfileSettingsStore = create<ProfileSettingsState>((set, get) =
     };
 
     set({ profile: nextProfile });
-    await persistProfile(nextProfile);
+    await persistProfile(nextProfile, get().loadedUserId);
   }
 }));
+
+export const syncProfileFromRemote = ({
+  authEmail,
+  currentProfile,
+  remoteProfile
+}: {
+  authEmail: string;
+  currentProfile: ProfileSettings;
+  remoteProfile: Profile | null;
+}): ProfileSettings => {
+  if (!remoteProfile) {
+    return {
+      ...currentProfile,
+      email: authEmail.trim().toLowerCase()
+    };
+  }
+
+  const firstName = remoteProfile.first_name ?? "";
+  const lastName = remoteProfile.last_name ?? "";
+  const displayName = remoteProfile.display_name ?? `${firstName} ${lastName}`.trim();
+
+  return {
+    ...currentProfile,
+    email: authEmail.trim().toLowerCase(),
+    firstName,
+    fullName: displayName,
+    lastName,
+    phone: remoteProfile.phone ?? "",
+    updatedAt: remoteProfile.updated_at
+  };
+};
 
 export const getProfileDisplayName = (profile: ProfileSettings, fallbackName: string) =>
   profile.fullName.trim() ||
