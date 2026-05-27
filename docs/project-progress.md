@@ -12,6 +12,97 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Invalid Statement Upload Handling
+
+Status: `Done`
+
+Started: 2026-05-26
+
+Goal:
+- If a user uploads a PDF or file that is not a readable bank/credit card statement, stop the import before saving.
+- Show a clean popup with an OK button.
+- Clear the staged file after OK so the user can upload a different statement.
+
+Progress Log:
+- 2026-05-26: Started after user approved the invalid statement handling task.
+- 2026-05-26: Reviewed the import screen and confirmed it already has summary and duplicate modal patterns.
+- 2026-05-26: Changed import flow to parse/validate before uploading/registering files.
+- 2026-05-26: Added a modal for unreadable or non-statement files with OK reset behavior.
+
+Issues Found:
+- Import currently stages/uploads the file before the parser proves it is a usable statement.
+- If parsing finds no transactions, the UI can fall back to inline errors instead of a clear modal reset flow.
+
+Changes Made:
+- Updated `src/features/import/import-statement-screen.tsx`.
+- Added invalid statement detection when parsing finds zero transactions and zero duplicates.
+- Added `InvalidStatementModal`.
+- OK clears the selected file, progress, parse result, summary, and error state.
+- Reordered Supabase upload/registration so it only happens after the parser finds a valid statement.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: `/import?returnTo=calendar&invalidcheck=1` renders the upload screen.
+- `npm run check:pdf-parser` passed after the import-flow changes.
+
+Approval:
+- 2026-05-26: User approved Invalid Statement Upload Handling.
+
+## Previous Task
+
+### PDF Parser Improvement
+
+Status: `Done`
+
+Started: 2026-05-26
+
+Goal:
+- Improve real PDF statement parsing reliability using the user's sample statements.
+- Add repeatable parser checks so future changes can be verified against the same PDF layouts.
+- Keep import behavior production-safe: no placeholder rows, no zero-amount rows, and clean duplicate/payment handling.
+
+Progress Log:
+- 2026-05-26: Started after user approved the next task.
+- 2026-05-26: Confirmed the mobile app routes PDF parsing through `supabase/functions/parse-statement`.
+- 2026-05-26: Confirmed the local UI parser only delegates PDFs to the Supabase Edge Function.
+- 2026-05-26: Confirmed sample PDFs are available locally for Apple Card, Chase/statement-list, Wells Fargo/eStmt, and February-March statement layouts.
+- 2026-05-26: Added a local-only PDF parser check script so sample statements can be tested without sending PDFs to a remote endpoint.
+- 2026-05-26: Improved PDF parsing for statement periods, cent-only amounts, zero-dollar rows, card payment detection, interest charge rows, and account detection.
+
+Issues Found:
+- No repeatable parser check exists yet for the real sample PDFs.
+- The PDF parser is duplicated in the Edge Function with no shared test harness.
+- Cent-only amounts like `.85` can be missed by the current money parser.
+- Zero-dollar rows can be parsed as transactions and later fail during save.
+- Bank of America checking statements can be misdetected as Chase because Chase appears as a payment merchant.
+- American Express statements can be misdetected as Chase when Chase appears in statement text.
+- Apple Card statements can contain older installment purchase rows outside the current statement period.
+- Interest charge transaction rows were being treated as noise instead of imported spend.
+
+Changes Made:
+- Added dev-only `pdfjs-dist` and `npm run check:pdf-parser`.
+- Added `scripts/check-pdf-parser.mjs`.
+- Updated `supabase/functions/parse-statement/index.ts`.
+- Updated `src/features/import/statement-parser.ts`.
+- Added statement-period filtering for PDF transactions.
+- Added parsing for cent-only amount formats.
+- Skipped zero-dollar PDF transaction rows.
+- Improved payment classification for Apple Card, Chase credit card e-pay, and `DES:PAYMENT` rows.
+- Reordered account detection so statement institutions win over merchant names inside transactions.
+- Kept interest charges as importable expense rows.
+- Deployed the updated `parse-statement` Supabase Edge Function.
+
+Verification:
+- `npm run check:pdf-parser` passed for all four local sample PDFs.
+- Local parser check results: Apple Card 17 transactions, Chase 7 transactions, Bank of America checking 15 transactions, American Express 8 transactions.
+- `npm run typecheck` passed.
+- `npx supabase functions deploy parse-statement` succeeded for project `fzjdleinikqgtedjkwzu`.
+
+Approval:
+- 2026-05-26: User approved PDF Parser Improvement.
+
+## Previous Task
+
 ### Profile Sync To Supabase
 
 Status: `Done`

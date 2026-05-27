@@ -503,7 +503,10 @@ const parseMoney = (value: string) => {
   }
 
   const isParenthesesNegative = /^\(.*\)$/.test(trimmed);
-  const normalized = trimmed.replace(/[,$\s]/g, "").replace(/[()]/g, "");
+  const normalized = trimmed
+    .replace(/[,$\s]/g, "")
+    .replace(/[()]/g, "")
+    .replace(/^([+-]?)\./, "$10.");
   const parsed = Number.parseFloat(normalized);
 
   if (Number.isNaN(parsed)) {
@@ -522,7 +525,7 @@ const inferTransactionKind = (
   descriptor: string,
   amount: number
 ): ParsedTransactionKind => {
-  if (/mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|credit card payment|card payment|autopay|online payment|payment to/i.test(descriptor)) {
+  if (/mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|applecard.*payment|chase credit crd.*epay|credit crd.*epay|des:payment|credit card payment|card payment|autopay|online payment|payment to/i.test(descriptor)) {
     return "payment";
   }
 
@@ -672,12 +675,16 @@ export const detectStatementAccount = (text: string): DetectedStatementAccount |
       }
     ],
     [
-      /chase|jpmorgan/i,
+      /bank\s+of\s+america/i,
       {
-        accountType: "Credit card",
-        confidence: "high",
-        institution: "Chase",
-        name: "Chase Card"
+        accountType: /adv plus banking|checking|personal deposit|banking/i.test(normalized)
+          ? "Checking"
+          : "Credit card",
+        confidence: "medium",
+        institution: "Bank of America",
+        name: /adv plus banking|checking|personal deposit|banking/i.test(normalized)
+          ? "Bank of America Checking"
+          : "Bank of America Card"
       }
     ],
     [
@@ -690,21 +697,21 @@ export const detectStatementAccount = (text: string): DetectedStatementAccount |
       }
     ],
     [
+      /chase|jpmorgan/i,
+      {
+        accountType: "Credit card",
+        confidence: "high",
+        institution: "Chase",
+        name: "Chase Card"
+      }
+    ],
+    [
       /wells\s+fargo/i,
       {
         accountType: "Checking",
         confidence: "high",
         institution: "Wells Fargo",
         name: "Wells Fargo Account"
-      }
-    ],
-    [
-      /bank\s+of\s+america/i,
-      {
-        accountType: "Credit card",
-        confidence: "medium",
-        institution: "Bank of America",
-        name: "Bank of America Card"
       }
     ]
   ];

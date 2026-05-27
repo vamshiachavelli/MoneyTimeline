@@ -28,6 +28,12 @@ type PdfLine = {
   y: number;
 };
 
+type StatementPeriod = {
+  end: string;
+  start: string;
+  year: number;
+};
+
 type TransactionDraft = {
   accountId: string;
   accountName: string;
@@ -57,6 +63,11 @@ type FailedRow = {
   raw: Record<string, string> | string;
   rowNumber: number;
 };
+
+const moneyPatternSource =
+  "[-+]?[$]?(?:\\(?\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?\\)?|\\(?\\.\\d{2}\\)?)";
+const moneyPattern = new RegExp(moneyPatternSource);
+const moneyPatternGlobal = new RegExp(moneyPatternSource, "g");
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -136,8 +147,13 @@ const parsePdfStatement = async (body: ParseStatementBody) => {
   }
 
   const lines = groupItemsIntoLines(items);
-  const detectedAccount = detectStatementAccount(`${body.fileName} ${lines.map((line) => line.text).join(" ")}`);
-  const candidates = extractTransactionsFromPositionedLines(lines, body);
+  const statementText = `${body.fileName} ${lines.map((line) => line.text).join(" ")}`;
+  const detectedAccount = detectStatementAccount(statementText);
+  const statementPeriod = detectStatementPeriod(statementText);
+  const candidates = filterTransactionsToStatementPeriod(
+    extractTransactionsFromPositionedLines(lines, body, statementPeriod),
+    statementPeriod
+  );
   const failedRows: FailedRow[] = [];
 
   if (candidates.length === 0) {
@@ -160,6 +176,7 @@ const parsePdfStatement = async (body: ParseStatementBody) => {
       debug: {
         itemCount: items.length,
         lineCount: lines.length,
+        statementPeriod,
         lines: lines.slice(0, 220)
       }
     };
@@ -248,10 +265,12 @@ const mergeLineText = (items: TextItem[]) => {
 
 const extractTransactionsFromPositionedLines = (
   lines: PdfLine[],
-  body: ParseStatementBody
+  body: ParseStatementBody,
+  statementPeriod: StatementPeriod | null
 ): TransactionDraft[] => {
+  const fallbackYear = statementPeriod?.year ?? 2026;
   const fullLineTransactions = lines
-    .map((line) => parseFullTransactionLine(line, body))
+    .map((line) => parseFullTransactionLine(line, body, fallbackYear))
     .filter(Boolean) as TransactionDraft[];
   const dateColumnLines = lines.filter((line) => isDateOnlyLine(line.text));
   const amountColumnLines = lines.filter((line) => isAmountOnlyLine(line.text));
@@ -259,10 +278,10 @@ const extractTransactionsFromPositionedLines = (
     .map((dateLine) => {
       const amountLine = findNearestAmountLine(dateLine, amountColumnLines);
       const description = findDescriptionForRow(dateLine, lines);
-      const date = parseDate(dateLine.text);
+      const date = parseDate(dateLine.text, fallbackYear);
       const amount = amountLine ? parseMoney(amountLine.text) : null;
 
-      if (!date || amount == null || !description) {
+      if (!date || amount == null || amount === 0 || !description) {
         return null;
       }
 
@@ -307,7 +326,8 @@ const extractTransactionsFromPositionedLines = (
 
 const parseFullTransactionLine = (
   line: PdfLine,
-  body: ParseStatementBody
+  body: ParseStatementBody,
+  fallbackYear: number
 ): TransactionDraft | null => {
   const match = line.text.match(
     /^(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}[/-]\d{1,2}[/-]\d{1,2})(?:\*)?\s+(.+)$/
@@ -317,9 +337,9 @@ const parseFullTransactionLine = (
     return null;
   }
 
-  const date = parseDate(match[1]);
+  const date = parseDate(match[1], fallbackYear);
   const remainder = match[2].trim();
-  const moneyMatches = [...remainder.matchAll(/[-+]?[$]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?/g)];
+  const moneyMatches = [...remainder.matchAll(moneyPatternGlobal)];
 
   if (!date || moneyMatches.length === 0) {
     return null;
@@ -328,13 +348,16 @@ const parseFullTransactionLine = (
   const amountMatch = moneyMatches[moneyMatches.length - 1];
   const amount = parseMoney(amountMatch[0]);
 
-  if (amount == null) {
+  if (amount == null || amount === 0) {
     return null;
   }
 
   const rawDescription = remainder.slice(0, amountMatch.index).trim();
   const description = rawDescription
-    .replace(/\s+\d+(?:\.\d+)?%\s+[-+]?[$]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?\s*$/i, "")
+    .replace(
+      new RegExp(`\\s+\\d+(?:\\.\\d+)?%\\s+${moneyPatternSource}\\s*$`, "i"),
+      ""
+    )
     .trim();
   const merchant = cleanMerchant(description);
 
@@ -417,7 +440,7 @@ const isDateOnlyLine = (text: string) =>
   );
 
 const isAmountOnlyLine = (text: string) =>
-  /^[-+]?[$]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?(?:\s+[-+]?[$]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?)*$/.test(
+  new RegExp(`^${moneyPatternSource}(?:\\s+${moneyPatternSource})*$`).test(
     text.trim()
   );
 
@@ -427,12 +450,12 @@ const isHeaderOrNoise = (text: string) =>
   );
 
 const isNoiseMerchant = (merchant: string) =>
-  /^(total|amount|new balance|minimum payment|interest charge|payment due date|customer care|website|fees?)\b/i.test(
+  /^(total|amount|new balance|minimum payment|payment due date|customer care|website|fees?)\b/i.test(
     merchant
   );
 
 const parseMoney = (value: string) => {
-  const firstMoney = value.match(/[-+]?[$]?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?/);
+  const firstMoney = value.match(moneyPattern);
 
   if (!firstMoney) {
     return null;
@@ -440,7 +463,10 @@ const parseMoney = (value: string) => {
 
   const raw = firstMoney[0];
   const isParenthesesNegative = /^\(.*\)$/.test(raw);
-  const normalized = raw.replace(/[,$\s]/g, "").replace(/[()]/g, "");
+  const normalized = raw
+    .replace(/[,$\s]/g, "")
+    .replace(/[()]/g, "")
+    .replace(/^([+-]?)\./, "$10.");
   const parsed = Number.parseFloat(normalized);
 
   if (Number.isNaN(parsed)) {
@@ -468,7 +494,7 @@ const inferTransactionKind = (
   amount: number
 ): TransactionKind => {
   if (
-    /mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|credit card payment|card payment|autopay|online payment|payment to/i.test(
+    /mobile payment - thank you|payment thank you|american express.*ach pmt|ach pmt|applecard.*payment|chase credit crd.*epay|credit crd.*epay|des:payment|credit card payment|card payment|autopay|online payment|payment to/i.test(
       descriptor
     )
   ) {
@@ -486,11 +512,10 @@ const inferTransactionKind = (
   return "expense";
 };
 
-const parseDate = (value: string) => {
+const parseDate = (value: string, fallbackYear = 2026) => {
   const trimmed = value.trim().replace(/\*$/, "");
   const isoLike = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
   const usLike = trimmed.match(/^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$/);
-  const fallbackYear = 2026;
 
   if (isoLike) {
     return formatDateParts(Number(isoLike[1]), Number(isoLike[2]), Number(isoLike[3]));
@@ -515,6 +540,94 @@ const formatDateParts = (year: number, month: number, day: number) => {
   }
 
   return `${year}-${`${month}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+};
+
+const detectStatementPeriod = (text: string): StatementPeriod | null => {
+  const normalized = text.replace(/\s+/g, " ");
+  const monthRange = normalized.match(
+    /\b(?:for|from)?\s*(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})\s+(?:to|through|[-–—])\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2}),?\s+(\d{4})/i
+  );
+
+  if (monthRange) {
+    const start = formatDateParts(
+      Number(monthRange[3]),
+      monthNameToNumber(monthRange[1]),
+      Number(monthRange[2])
+    );
+    const end = formatDateParts(
+      Number(monthRange[6]),
+      monthNameToNumber(monthRange[4]),
+      Number(monthRange[5])
+    );
+
+    return start && end ? { end, start, year: Number(monthRange[6]) } : null;
+  }
+
+  const shortRange = normalized.match(
+    /\b(?:opening\/closing date|closing date)\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*[-–—]\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i
+  );
+
+  if (shortRange) {
+    const startYear = normalizeYear(shortRange[3]);
+    const endYear = normalizeYear(shortRange[6]);
+    const start = formatDateParts(startYear, Number(shortRange[1]), Number(shortRange[2]));
+    const end = formatDateParts(endYear, Number(shortRange[4]), Number(shortRange[5]));
+
+    return start && end ? { end, start, year: endYear } : null;
+  }
+
+  const appleRange = normalized.match(
+    /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2})\s*[-–—]\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{1,2}),\s*(\d{4})/i
+  );
+
+  if (appleRange) {
+    const year = Number(appleRange[5]);
+    const start = formatDateParts(year, monthNameToNumber(appleRange[1]), Number(appleRange[2]));
+    const end = formatDateParts(year, monthNameToNumber(appleRange[3]), Number(appleRange[4]));
+
+    return start && end ? { end, start, year } : null;
+  }
+
+  const closingOnly = normalized.match(/\bclosing date\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i);
+
+  if (closingOnly) {
+    const year = normalizeYear(closingOnly[3]);
+    const end = formatDateParts(year, Number(closingOnly[1]), Number(closingOnly[2]));
+    const start = formatDateParts(
+      Number(closingOnly[1]) === 1 ? year - 1 : year,
+      Number(closingOnly[1]) === 1 ? 12 : Number(closingOnly[1]) - 1,
+      1
+    );
+
+    return start && end ? { end, start, year } : null;
+  }
+
+  return null;
+};
+
+const filterTransactionsToStatementPeriod = (
+  transactions: TransactionDraft[],
+  statementPeriod: StatementPeriod | null
+) => {
+  if (!statementPeriod) {
+    return transactions;
+  }
+
+  return transactions.filter(
+    (transaction) =>
+      transaction.date >= statementPeriod.start && transaction.date <= statementPeriod.end
+  );
+};
+
+const monthNameToNumber = (value: string) => {
+  const normalized = value.slice(0, 3).toLowerCase();
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  return months.indexOf(normalized) + 1;
+};
+
+const normalizeYear = (value: string) => {
+  const year = Number(value);
+  return year < 100 ? 2000 + year : year;
 };
 
 const cleanMerchant = (value: string) =>
@@ -588,12 +701,16 @@ const detectStatementAccount = (text: string): DetectedStatementAccount | null =
       }
     ],
     [
-      /chase|jpmorgan/i,
+      /bank\s+of\s+america/i,
       {
-        accountType: "Credit card",
-        confidence: "high",
-        institution: "Chase",
-        name: "Chase Card"
+        accountType: /adv plus banking|checking|personal deposit|banking/i.test(normalized)
+          ? "Checking"
+          : "Credit card",
+        confidence: "medium",
+        institution: "Bank of America",
+        name: /adv plus banking|checking|personal deposit|banking/i.test(normalized)
+          ? "Bank of America Checking"
+          : "Bank of America Card"
       }
     ],
     [
@@ -603,6 +720,15 @@ const detectStatementAccount = (text: string): DetectedStatementAccount | null =
         confidence: "high",
         institution: "American Express",
         name: "Amex Card"
+      }
+    ],
+    [
+      /chase|jpmorgan/i,
+      {
+        accountType: "Credit card",
+        confidence: "high",
+        institution: "Chase",
+        name: "Chase Card"
       }
     ],
     [

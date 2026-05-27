@@ -215,6 +215,7 @@ export const ImportStatementScreen = () => {
   const [parseResult, setParseResult] = useState<StatementParseResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [alreadyUploadedVisible, setAlreadyUploadedVisible] = useState(false);
+  const [invalidStatementVisible, setInvalidStatementVisible] = useState(false);
   const [summaryVisible, setSummaryVisible] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
 
@@ -271,6 +272,7 @@ export const ImportStatementScreen = () => {
       setSummary(null);
       setParseResult(null);
       setAlreadyUploadedVisible(false);
+      setInvalidStatementVisible(false);
       setSummaryVisible(false);
       setSaveStatus("idle");
       setStatus("picked");
@@ -300,37 +302,13 @@ export const ImportStatementScreen = () => {
     setSummary(null);
     setParseResult(null);
     setAlreadyUploadedVisible(false);
+    setInvalidStatementVisible(false);
     setSummaryVisible(false);
     setSaveStatus("idle");
     setProgress(12);
     setStatus("uploading");
 
     try {
-      let uploadedFileId: string | null = null;
-      let importJobId: string | null = null;
-
-      if (user) {
-        const upload = await uploadService.uploadStatementBlob({
-          contentType: fileToImport.mimeType,
-          fileName: fileToImport.name,
-          uri: fileToImport.uri,
-          userId: user.id
-        });
-        const registeredFile = await uploadService.registerUploadedFile(user.id, {
-          bucketId: upload.bucketId,
-          fileName: fileToImport.name,
-          mimeType: fileToImport.mimeType,
-          sizeBytes: upload.sizeBytes,
-          storagePath: upload.storagePath
-        });
-        const importJob = (await uploadService.startProcessing(registeredFile.id)) as {
-          import_job_id?: string;
-        } | null;
-
-        uploadedFileId = registeredFile.id;
-        importJobId = importJob?.import_job_id ?? null;
-      }
-
       const localKnownDuplicateHashes = await getSavedDuplicateHashes();
       const rawResult = await parseStatementFile({
         account: {
@@ -358,6 +336,41 @@ export const ImportStatementScreen = () => {
       );
 
       setSelectedAccountId(detectedAccount.id);
+
+      if (isUnreadableStatementResult(result)) {
+        setProgress(0);
+        setStatus("error");
+        setParseResult(null);
+        setSummary(null);
+        clearSession();
+        setInvalidStatementVisible(true);
+        return;
+      }
+
+      let uploadedFileId: string | null = null;
+      let importJobId: string | null = null;
+
+      if (user) {
+        const upload = await uploadService.uploadStatementBlob({
+          contentType: fileToImport.mimeType,
+          fileName: fileToImport.name,
+          uri: fileToImport.uri,
+          userId: user.id
+        });
+        const registeredFile = await uploadService.registerUploadedFile(user.id, {
+          bucketId: upload.bucketId,
+          fileName: fileToImport.name,
+          mimeType: fileToImport.mimeType,
+          sizeBytes: upload.sizeBytes,
+          storagePath: upload.storagePath
+        });
+        const importJob = (await uploadService.startProcessing(registeredFile.id)) as {
+          import_job_id?: string;
+        } | null;
+
+        uploadedFileId = registeredFile.id;
+        importJobId = importJob?.import_job_id ?? null;
+      }
 
       if (result.transactions.length === 0 && result.duplicates.length > 0) {
         setParseResult(null);
@@ -394,11 +407,9 @@ export const ImportStatementScreen = () => {
     } catch (error) {
       setProgress(0);
       setStatus("error");
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while parsing the statement."
-      );
+      setParseResult(null);
+      setSummary(null);
+      setInvalidStatementVisible(true);
     }
   };
 
@@ -408,6 +419,7 @@ export const ImportStatementScreen = () => {
     setSummary(null);
     setParseResult(null);
     setAlreadyUploadedVisible(false);
+    setInvalidStatementVisible(false);
     setSummaryVisible(false);
     setSaveStatus("idle");
     setStatus("idle");
@@ -709,6 +721,10 @@ export const ImportStatementScreen = () => {
           onOk={clearFile}
           visible={alreadyUploadedVisible}
         />
+        <InvalidStatementModal
+          onOk={clearFile}
+          visible={invalidStatementVisible}
+        />
       </View>
     </Screen>
   );
@@ -868,6 +884,52 @@ const removeInvalidAmountRows = (result: StatementParseResult): StatementParseRe
     },
     transactions
   };
+};
+
+const isUnreadableStatementResult = (result: StatementParseResult) =>
+  result.transactions.length === 0 &&
+  result.duplicates.length === 0 &&
+  result.summary.totalFound === 0;
+
+const InvalidStatementModal = ({
+  onOk,
+  visible
+}: {
+  onOk: () => void;
+  visible: boolean;
+}) => {
+  const { accentColor, accentSoft } = useAppearanceTheme();
+
+  return (
+    <Modal animationType="fade" onRequestClose={onOk} transparent visible={visible}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHandle} />
+          <View style={styles.alreadyUploadedContent}>
+            <View style={[styles.modalIcon, { backgroundColor: accentSoft }]}>
+              <AlertCircle color={accentColor} size={28} strokeWidth={2.7} />
+            </View>
+            <Text style={styles.alreadyUploadedTitle}>Upload a statement</Text>
+            <Text style={styles.alreadyUploadedText}>
+              Please upload a bank or credit card statement. This file could not be read as a
+              statement.
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOk}
+            style={({ pressed }) => [
+              styles.modalConfirmButton,
+              { backgroundColor: accentColor },
+              pressed && styles.pressed
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>OK</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
 };
 
 const AlreadyUploadedModal = ({
