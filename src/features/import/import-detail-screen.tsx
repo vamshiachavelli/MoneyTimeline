@@ -163,14 +163,50 @@ export const ImportDetailScreen = () => {
 
   const counts = useMemo(() => {
     const transactions = detail?.transactions ?? [];
+    const expenses = transactions.filter((transaction) => transaction.kind === "expense");
+    const moved = transactions.filter(
+      (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+    );
 
     return {
-      expenses: transactions.filter((transaction) => transaction.kind === "expense").length,
-      moved: transactions.filter(
-        (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
-      ).length
+      expenses: expenses.length,
+      expenseTotal: expenses.reduce((sum, transaction) => sum + transaction.amount, 0),
+      moved: moved.length,
+      movedTotal: moved.reduce((sum, transaction) => sum + transaction.amount, 0)
     };
   }, [detail?.transactions]);
+
+  const groupedTransactions = useMemo(() => {
+    const transactions = detail?.transactions ?? [];
+
+    return [
+      {
+        accent: accentColor,
+        icon: ReceiptText,
+        rows: transactions.filter((transaction) => transaction.kind === "expense"),
+        title: "Expenses"
+      },
+      {
+        accent: "#7FA7FF",
+        icon: CreditCard,
+        rows: transactions.filter(
+          (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+        ),
+        title: "Payments / transfers"
+      },
+      {
+        accent: colors.personal,
+        icon: WalletCards,
+        rows: transactions.filter(
+          (transaction) =>
+            transaction.kind !== "expense" &&
+            transaction.kind !== "payment" &&
+            transaction.kind !== "transfer"
+        ),
+        title: "Other activity"
+      }
+    ].filter((group) => group.rows.length > 0);
+  }, [accentColor, detail?.transactions]);
 
   const openTimeline = () => {
     router.push(withReturnTo(`/timeline?importBatchId=${encodeURIComponent(importId)}`, "dataImport"));
@@ -251,12 +287,14 @@ export const ImportDetailScreen = () => {
                 color={accentColor}
                 icon={ReceiptText}
                 label="Expenses"
+                meta={formatCurrency(counts.expenseTotal)}
                 value={counts.expenses}
               />
               <SummaryCard
                 color="#7FA7FF"
                 icon={CreditCard}
                 label="Payments"
+                meta={formatCurrency(counts.movedTotal)}
                 value={counts.moved}
               />
             </View>
@@ -283,29 +321,50 @@ export const ImportDetailScreen = () => {
               </Text>
             </View>
 
-            <View style={styles.transactionList}>
-              {detail.transactions.map((transaction) => (
-                <View key={transaction.id} style={styles.transactionRow}>
-                  <View style={[styles.transactionIcon, { backgroundColor: accentSoft }]}>
-                    {transaction.kind === "expense" ? (
-                      <ReceiptText color={accentColor} size={17} strokeWidth={2.4} />
-                    ) : (
-                      <CreditCard color="#7FA7FF" size={17} strokeWidth={2.4} />
-                    )}
+            <View style={styles.groupedList}>
+              {groupedTransactions.map((group) => {
+                const Icon = group.icon;
+
+                return (
+                  <View key={group.title} style={styles.transactionGroup}>
+                    <View style={styles.groupHeader}>
+                      <View style={[styles.groupIcon, { backgroundColor: `${group.accent}22` }]}>
+                        <Icon color={group.accent} size={16} strokeWidth={2.5} />
+                      </View>
+                      <Text style={styles.groupTitle}>{group.title}</Text>
+                      <Text style={[styles.groupCount, { color: group.accent }]}>
+                        {group.rows.length}
+                      </Text>
+                    </View>
+
+                    <View style={styles.transactionList}>
+                      {group.rows.map((transaction) => (
+                        <View key={transaction.id} style={styles.transactionRow}>
+                          <View style={[styles.transactionIcon, { backgroundColor: `${group.accent}22` }]}>
+                            <Icon color={group.accent} size={17} strokeWidth={2.4} />
+                          </View>
+                          <View style={styles.transactionCopy}>
+                            <Text numberOfLines={1} style={styles.transactionMerchant}>
+                              {transaction.merchant}
+                            </Text>
+                            <Text style={styles.transactionMeta}>
+                              {formatTransactionDate(transaction.date)}
+                            </Text>
+                          </View>
+                          <Text
+                            style={[
+                              styles.transactionAmount,
+                              transaction.kind === "expense" ? null : styles.moneyMovementAmount
+                            ]}
+                          >
+                            {getTransactionAmountLabel(transaction)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                  <View style={styles.transactionCopy}>
-                    <Text numberOfLines={1} style={styles.transactionMerchant}>
-                      {transaction.merchant}
-                    </Text>
-                    <Text style={styles.transactionMeta}>
-                      {formatTransactionDate(transaction.date)}
-                    </Text>
-                  </View>
-                  <Text style={styles.transactionAmount}>
-                    {getTransactionAmountLabel(transaction)}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </ScrollView>
         )}
@@ -318,11 +377,13 @@ const SummaryCard = ({
   color,
   icon: Icon,
   label,
+  meta,
   value
 }: {
   color: string;
   icon: typeof ReceiptText;
   label: string;
+  meta?: string;
   value: number;
 }) => (
   <View style={styles.summaryCard}>
@@ -331,6 +392,7 @@ const SummaryCard = ({
     </View>
     <Text style={styles.summaryValue}>{value}</Text>
     <Text style={styles.summaryLabel}>{label}</Text>
+    {meta ? <Text style={styles.summaryMeta}>{meta}</Text> : null}
   </View>
 );
 
@@ -483,6 +545,13 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textTransform: "uppercase"
   },
+  summaryMeta: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "800",
+    lineHeight: 15,
+    marginTop: 2
+  },
   timelineButton: {
     minHeight: 54,
     flexDirection: "row",
@@ -510,6 +579,37 @@ const styles = StyleSheet.create({
   sectionMeta: {
     fontSize: 12,
     fontWeight: "900"
+  },
+  groupedList: {
+    gap: spacing.md
+  },
+  transactionGroup: {
+    gap: spacing.sm
+  },
+  groupHeader: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  groupIcon: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14
+  },
+  groupTitle: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
+  },
+  groupCount: {
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 16
   },
   transactionList: {
     overflow: "hidden",
@@ -552,6 +652,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: 13,
     fontWeight: "900"
+  },
+  moneyMovementAmount: {
+    color: "#7FA7FF"
   },
   pressed: {
     opacity: 0.72,

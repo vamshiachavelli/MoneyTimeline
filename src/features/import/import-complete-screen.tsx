@@ -1,6 +1,14 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowLeft, CalendarDays, CheckCircle2, ReceiptText, Sparkles } from "lucide-react-native";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  CreditCard,
+  FileText,
+  ReceiptText,
+  Sparkles
+} from "lucide-react-native";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Screen } from "@/components/ui/screen";
@@ -20,6 +28,34 @@ const formatCurrency = (value: number) =>
     style: "currency"
   }).format(value);
 
+const formatImportedAt = (value: string) =>
+  new Date(value).toLocaleDateString("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+
+const getTransactionAmountLabel = (transaction: { amount: number; kind: string }) =>
+  transaction.kind === "expense"
+    ? `-${formatCurrency(Math.abs(transaction.amount))}`
+    : formatCurrency(Math.abs(transaction.amount));
+
+const getKindLabel = (kind: string) => {
+  if (kind === "payment") {
+    return "Payment";
+  }
+
+  if (kind === "transfer") {
+    return "Transfer";
+  }
+
+  if (kind === "income") {
+    return "Income";
+  }
+
+  return "Expense";
+};
+
 export const ImportCompleteScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
@@ -33,6 +69,10 @@ export const ImportCompleteScreen = () => {
     completion
       ? router.replace(`/timeline?importBatchId=${encodeURIComponent(completion.batchId)}`)
       : router.replace("/timeline");
+  const goImportDetail = () =>
+    completion
+      ? router.push(`/import-detail/${encodeURIComponent(completion.batchId)}?returnTo=importComplete`)
+      : router.push("/data-import");
 
   if (!completion) {
     return (
@@ -60,6 +100,11 @@ export const ImportCompleteScreen = () => {
   }
 
   const expenseCount = completion.savedCount - completion.paymentCount;
+  const expenses = completion.transactions.filter((transaction) => transaction.kind === "expense");
+  const moneyMovement = completion.transactions.filter(
+    (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
+  );
+  const previewTransactions = [...expenses.slice(0, 4), ...moneyMovement.slice(0, 2)].slice(0, 6);
 
   return (
     <Screen>
@@ -92,9 +137,30 @@ export const ImportCompleteScreen = () => {
               {completion.accountName} is now reflected across Calendar, Timeline, and Insights.
             </Text>
 
+            <View style={styles.statementStrip}>
+              <View style={styles.statementCopy}>
+                <Text style={styles.statementLabel}>Statement</Text>
+                <Text numberOfLines={1} style={styles.statementFile}>
+                  {completion.fileName}
+                </Text>
+                <Text style={styles.statementMeta}>
+                  Imported {formatImportedAt(completion.importedAt)}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Open statement detail"
+                accessibilityRole="button"
+                onPress={goImportDetail}
+                style={({ pressed }) => [styles.statementButton, pressed && styles.pressed]}
+              >
+                <FileText color={colors.textPrimary} size={16} strokeWidth={2.5} />
+                <Text style={styles.statementButtonText}>Details</Text>
+              </Pressable>
+            </View>
+
             <View style={styles.statGrid}>
               <StatPill label="Expenses" value={`${expenseCount}`} />
-              <StatPill label="Payments" value={`${completion.paymentCount}`} />
+              <StatPill label="Payments / transfers" value={`${completion.paymentCount}`} />
               <StatPill label="Range" value={completion.dateRange} />
             </View>
           </LinearGradient>
@@ -110,17 +176,47 @@ export const ImportCompleteScreen = () => {
               </View>
             </View>
 
-            {completion.transactions.slice(0, 5).map((transaction) => (
+            {previewTransactions.map((transaction) => (
               <View key={`${transaction.duplicateHash}-${transaction.rowNumber}`} style={styles.row}>
+                <View
+                  style={[
+                    styles.rowIcon,
+                    {
+                      backgroundColor:
+                        transaction.kind === "expense" ? accentSoft : "rgba(127, 167, 255, 0.18)"
+                    }
+                  ]}
+                >
+                  {transaction.kind === "expense" ? (
+                    <ReceiptText color={accentColor} size={16} strokeWidth={2.5} />
+                  ) : (
+                    <CreditCard color="#7FA7FF" size={16} strokeWidth={2.5} />
+                  )}
+                </View>
                 <View style={styles.rowCopy}>
                   <Text numberOfLines={1} style={styles.rowMerchant}>
                     {transaction.merchant}
                   </Text>
-                  <Text style={styles.rowMeta}>{transaction.date}</Text>
+                  <Text style={styles.rowMeta}>
+                    {transaction.date} - {getKindLabel(transaction.kind)}
+                  </Text>
                 </View>
-                <Text style={styles.rowAmount}>{formatCurrency(Math.abs(transaction.amount))}</Text>
+                <Text
+                  style={[
+                    styles.rowAmount,
+                    transaction.kind === "expense" ? null : styles.moneyMovementAmount
+                  ]}
+                >
+                  {getTransactionAmountLabel(transaction)}
+                </Text>
               </View>
             ))}
+
+            {completion.transactions.length > previewTransactions.length ? (
+              <Text style={styles.moreRowsText}>
+                +{completion.transactions.length - previewTransactions.length} more rows in this import
+              </Text>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -236,6 +332,61 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.lg
   },
+  statementStrip: {
+    width: "100%",
+    minHeight: 72,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.09)",
+    backgroundColor: "rgba(5, 8, 13, 0.36)",
+    marginTop: spacing.lg,
+    padding: spacing.md
+  },
+  statementCopy: {
+    minWidth: 0,
+    flex: 1
+  },
+  statementLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 14,
+    textTransform: "uppercase"
+  },
+  statementFile: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  statementMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginTop: 2
+  },
+  statementButton: {
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    paddingHorizontal: spacing.sm
+  },
+  statementButtonText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 16
+  },
   statPill: {
     minWidth: 0,
     flex: 1,
@@ -297,6 +448,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(5, 8, 13, 0.38)",
     paddingHorizontal: spacing.md
   },
+  rowIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 17
+  },
   rowCopy: {
     minWidth: 0,
     flex: 1
@@ -318,6 +476,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
     lineHeight: 18
+  },
+  moneyMovementAmount: {
+    color: "#7FA7FF"
+  },
+  moreRowsText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+    paddingTop: spacing.xs,
+    textAlign: "center"
   },
   footer: {
     position: "absolute",

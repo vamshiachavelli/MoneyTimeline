@@ -12,6 +12,49 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Import History / Recent Import Polish
+
+Status: `Done`
+
+Started: 2026-05-26
+
+Goal:
+- Make the post-import experience clearly show what was just added.
+- Improve recent import and import detail surfaces so users do not need to search the full timeline manually.
+- Keep imported batches scoped to the signed-in user and grouped by account/card where possible.
+
+Progress Log:
+- 2026-05-26: Started after user approved the next task.
+- 2026-05-26: Confirmed the existing flow has `/import-complete`, `/data-import`, `/import-detail/[id]`, and Timeline `importBatchId` filtering.
+- 2026-05-26: Improved the import-complete page with statement metadata, a detail shortcut, and clearer expense/payment preview rows.
+- 2026-05-26: Improved Data & Import history cards with expense spend and payments moved totals.
+- 2026-05-26: Improved statement detail pages by grouping expenses separately from payments/transfers.
+
+Issues Found:
+- Import-complete was useful but too generic for answering "what did I just upload?"
+- Data & Import cards showed counts but not enough financial meaning per statement.
+- Statement detail mixed expenses and payments/transfers in one list, making card payments look too much like spend.
+
+Changes Made:
+- Updated `src/features/import/import-complete-screen.tsx`.
+- Updated `src/features/import/data-import-screen.tsx`.
+- Updated `src/features/import/import-detail-screen.tsx`.
+- Updated `src/navigation/return-target.ts`.
+- Added a statement metadata strip and Details shortcut on import complete.
+- Added grouped transaction preview styling for recent imports.
+- Added expense spend and payments moved totals to import history cards.
+- Added grouped statement detail sections for expenses, payments/transfers, and other activity.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: `/data-import?polish=1` renders import history with `Expense spend` and `Payments moved` totals.
+- Browser check: `/import-detail/99dbd7a4-f4cb-473c-974d-f33baf1829a9?returnTo=dataImport` renders grouped Expenses and Payments / transfers sections.
+
+Approval:
+- 2026-05-26: User approved Import History / Recent Import Polish.
+
+## Previous Task
+
 ### Invalid Statement Upload Handling
 
 Status: `Done`

@@ -5,6 +5,7 @@ export type ReturnTarget =
   | "calendar"
   | "dataImport"
   | "groups"
+  | "importComplete"
   | "import"
   | "insights"
   | "people"
@@ -17,6 +18,7 @@ const returnTargetRoutes: Record<ReturnTarget, Href> = {
   calendar: "/calendar",
   dataImport: "/data-import",
   groups: "/groups",
+  importComplete: "/import-complete",
   import: "/import",
   insights: "/insights",
   people: "/people",
@@ -30,6 +32,7 @@ const returnTargetLabels: Record<ReturnTarget, string> = {
   calendar: "Calendar",
   dataImport: "Data & Import",
   groups: "Groups",
+  importComplete: "Import Complete",
   import: "Import",
   insights: "Insights",
   people: "People",
@@ -88,6 +91,10 @@ export const getReturnTargetForPathname = (pathname: string): ReturnTarget => {
 
   if (pathname.startsWith("/people")) {
     return "people";
+  }
+
+  if (pathname.startsWith("/import-complete")) {
+    return "importComplete";
   }
 
   if (pathname.startsWith("/import")) {

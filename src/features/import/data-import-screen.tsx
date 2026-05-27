@@ -39,12 +39,14 @@ import { withReturnTo } from "@/navigation/return-target";
 type HistoryItem = {
   accountName: string | null;
   expenseCount: number;
+  expenseTotal: number;
   fileName: string;
   fileType: string;
   id: string;
   importedAt: string;
   importedRows: number;
   paymentTransferCount: number;
+  paymentTransferTotal: number;
   source: "local" | "supabase";
   status: string;
   totalRows: number;
@@ -81,6 +83,10 @@ const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
   items.map((item) => ({
     accountName: item.accountName,
     expenseCount: item.transactions.filter((transaction) => transaction.kind === "expense").length,
+    expenseTotal:
+      item.transactions
+        .filter((transaction) => transaction.kind === "expense")
+        .reduce((sum, transaction) => sum + transaction.amount_minor / 100, 0),
     fileName: item.fileName,
     fileType: item.fileType.toUpperCase(),
     id: item.id,
@@ -89,6 +95,10 @@ const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
     paymentTransferCount: item.transactions.filter(
       (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
     ).length,
+    paymentTransferTotal:
+      item.transactions
+        .filter((transaction) => transaction.kind === "payment" || transaction.kind === "transfer")
+        .reduce((sum, transaction) => sum + transaction.amount_minor / 100, 0),
     source: "supabase",
     status: item.status,
     totalRows: item.totalRows,
@@ -105,6 +115,9 @@ const mapLocalHistory = (batches: SavedImportBatch[]): HistoryItem[] =>
   batches.map((batch) => ({
     accountName: batch.transactions[0]?.accountName ?? null,
     expenseCount: batch.transactions.filter((transaction) => transaction.kind === "expense").length,
+    expenseTotal: batch.transactions
+      .filter((transaction) => transaction.kind === "expense")
+      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     fileName: batch.fileName,
     fileType: "LOCAL",
     id: batch.id,
@@ -113,6 +126,9 @@ const mapLocalHistory = (batches: SavedImportBatch[]): HistoryItem[] =>
     paymentTransferCount: batch.transactions.filter(
       (transaction) => transaction.kind === "payment" || transaction.kind === "transfer"
     ).length,
+    paymentTransferTotal: batch.transactions
+      .filter((transaction) => transaction.kind === "payment" || transaction.kind === "transfer")
+      .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0),
     source: "local",
     status: "completed",
     totalRows: batch.transactions.length,
@@ -423,6 +439,20 @@ const ImportHistoryCard = ({
       <HistoryStat label="Payments" value={item.paymentTransferCount} />
     </View>
 
+    <View style={styles.historyTotals}>
+      <View style={styles.historyTotalBlock}>
+        <Text style={styles.historyTotalLabel}>Expense spend</Text>
+        <Text style={styles.historyTotalValue}>{formatCurrency(item.expenseTotal)}</Text>
+      </View>
+      <View style={styles.historyTotalDivider} />
+      <View style={styles.historyTotalBlock}>
+        <Text style={styles.historyTotalLabel}>Payments moved</Text>
+        <Text style={[styles.historyTotalValue, styles.paymentTotalValue]}>
+          {formatCurrency(item.paymentTransferTotal)}
+        </Text>
+      </View>
+    </View>
+
     <View style={styles.historyFooter}>
       <Text style={styles.statusText}>{toTitle(item.status)}</Text>
       <Text style={styles.fileTypeText}>{item.fileType}</Text>
@@ -668,6 +698,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.md
+  },
+  historyTotals: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: radii.md,
+    backgroundColor: "rgba(4, 8, 13, 0.28)",
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm
+  },
+  historyTotalBlock: {
+    minWidth: 0,
+    flex: 1
+  },
+  historyTotalLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 14,
+    textTransform: "uppercase"
+  },
+  historyTotalValue: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19,
+    marginTop: 2
+  },
+  paymentTotalValue: {
+    color: "#7FA7FF"
+  },
+  historyTotalDivider: {
+    width: 1,
+    height: 34,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginHorizontal: spacing.sm
   },
   historyStat: {
     flex: 1,
