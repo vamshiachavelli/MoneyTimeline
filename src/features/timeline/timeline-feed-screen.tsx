@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleHelp,
   CreditCard,
+  FileWarning,
   HandCoins,
   ReceiptText,
   Search,
@@ -217,6 +218,14 @@ export const TimelineFeedScreen = () => {
     () => settlements.filter((settlement) => settlement.status !== "cancelled"),
     [settlements]
   );
+  const importTransactions = useMemo(
+    () =>
+      importBatchId
+        ? ledgerTransactions.filter((transaction) => transaction.importBatchId === importBatchId)
+        : [],
+    [importBatchId, ledgerTransactions]
+  );
+  const isMissingImportBatch = Boolean(importBatchId) && importTransactions.length === 0;
 
   const timelineItems = useMemo(
     () => [
@@ -298,12 +307,22 @@ export const TimelineFeedScreen = () => {
           >
             <View style={styles.heroHeader}>
               <View style={[styles.heroIcon, { backgroundColor: accentSoft }]}>
-                <CalendarDays color={accentColor} size={27} strokeWidth={2.6} />
+                {isMissingImportBatch ? (
+                  <FileWarning color={colors.danger} size={27} strokeWidth={2.6} />
+                ) : (
+                  <CalendarDays color={accentColor} size={27} strokeWidth={2.6} />
+                )}
               </View>
               <View style={styles.heroCopy}>
-                <Text style={[styles.eyebrow, { color: accentColor }]}>Timeline feed</Text>
+                <Text style={[styles.eyebrow, { color: isMissingImportBatch ? colors.danger : accentColor }]}>
+                  Timeline feed
+                </Text>
                 <Text style={styles.heroTitle}>
-                  {importBatchId ? "Recently imported" : "Every spend, in order"}
+                  {isMissingImportBatch
+                    ? "Import was removed"
+                    : importBatchId
+                      ? "Recently imported"
+                      : "Every spend, in order"}
                 </Text>
               </View>
             </View>
@@ -318,71 +337,75 @@ export const TimelineFeedScreen = () => {
                 <Text style={styles.heroLabel}>{heroValueLabel}</Text>
                 <Text style={styles.heroSpend}>{formatCurrency(heroValue)}</Text>
                 <Text style={styles.heroMeta}>
-                  {confirmedSettlementCount} confirmed - {settlementCount} settlement events
+                  {isMissingImportBatch
+                    ? "No transactions are attached to this import anymore"
+                    : `${confirmedSettlementCount} confirmed - ${settlementCount} settlement events`}
                 </Text>
               </View>
             </View>
           </LinearGradient>
 
-          <View style={[styles.searchShell, { backgroundColor: palette.card }]}>
-            <Search color={colors.textMuted} size={18} strokeWidth={2.4} />
-            <TextInput
-              autoCapitalize="none"
-              autoCorrect={false}
-              onChangeText={setQuery}
-              placeholder="Search merchant, category, note"
-              placeholderTextColor={colors.textMuted}
-              returnKeyType="search"
-              style={styles.searchInput}
-              value={query}
-            />
-            {query ? (
-              <Pressable
-                accessibilityLabel="Clear search"
-                accessibilityRole="button"
-                onPress={() => setQuery("")}
-                style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
-              >
-                <X color={colors.textSecondary} size={16} strokeWidth={2.5} />
-              </Pressable>
-            ) : null}
-          </View>
+          {!isMissingImportBatch ? (
+            <>
+              <View style={[styles.searchShell, { backgroundColor: palette.card }]}>
+                <Search color={colors.textMuted} size={18} strokeWidth={2.4} />
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setQuery}
+                  placeholder="Search merchant, category, note"
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="search"
+                  style={styles.searchInput}
+                  value={query}
+                />
+                {query ? (
+                  <Pressable
+                    accessibilityLabel="Clear search"
+                    accessibilityRole="button"
+                    onPress={() => setQuery("")}
+                    style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
+                  >
+                    <X color={colors.textSecondary} size={16} strokeWidth={2.5} />
+                  </Pressable>
+                ) : null}
+              </View>
 
-          <ScrollView
-            contentContainerStyle={styles.filterRow}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-          >
-            {importBatchId ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.replace("/timeline")}
-                style={({ pressed }) => [
-                  styles.filterPill,
-                  styles.filterPillActive,
-                  { backgroundColor: accentSoft, borderColor: `${accentColor}55` },
-                  pressed && styles.pressed
-                ]}
+              <ScrollView
+                contentContainerStyle={styles.filterRow}
+                horizontal
+                showsHorizontalScrollIndicator={false}
               >
-                <Text style={[styles.filterText, { color: accentColor }]}>Recent import</Text>
-                <Text style={styles.filterCountActive}>{filteredItems.length}</Text>
-              </Pressable>
-            ) : null}
-            {filterOptions.map((filter) => {
-              const active = activeFilter === filter.value;
-              const count =
-                filter.value === "all"
-                  ? transactionCount + settlementCount
-                  : filter.value === "settlements"
-                    ? settlementCount
-                    : filter.value === "payments"
-                      ? ledgerTransactions.filter((transaction) => !isSpendTransaction(transaction))
-                          .length
-                      : ledgerTransactions.filter(
-                          (transaction) => transaction.classification === filter.value
-                        ).length;
+                {importBatchId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.replace("/timeline")}
+                    style={({ pressed }) => [
+                      styles.filterPill,
+                      styles.filterPillActive,
+                      { backgroundColor: accentSoft, borderColor: `${accentColor}55` },
+                      pressed && styles.pressed
+                    ]}
+                  >
+                    <Text style={[styles.filterText, { color: accentColor }]}>Recent import</Text>
+                    <Text style={styles.filterCountActive}>{importTransactions.length}</Text>
+                  </Pressable>
+                ) : null}
+                {filterOptions.map((filter) => {
+                  const active = activeFilter === filter.value;
+                  const count =
+                    filter.value === "all"
+                      ? transactionCount + settlementCount
+                      : filter.value === "settlements"
+                        ? settlementCount
+                        : filter.value === "payments"
+                          ? ledgerTransactions.filter((transaction) => !isSpendTransaction(transaction))
+                              .length
+                          : ledgerTransactions.filter(
+                              (transaction) => transaction.classification === filter.value
+                            ).length;
 
-              return (
+                  return (
                 <Pressable
                   accessibilityRole="button"
                   key={filter.value}
@@ -403,11 +426,19 @@ export const TimelineFeedScreen = () => {
                     {count}
                   </Text>
                 </Pressable>
-              );
-            })}
-          </ScrollView>
+                  );
+                })}
+              </ScrollView>
+            </>
+          ) : null}
 
-          {groups.length > 0 ? (
+          {isMissingImportBatch ? (
+            <TimelineEmptyState
+              hasSearch={false}
+              isMissingImportBatch
+              onAction={() => router.replace("/data-import")}
+            />
+          ) : groups.length > 0 ? (
             <View style={styles.groupList}>
               {groups.map((group) => (
                 <TimelineDateGroup
@@ -704,19 +735,38 @@ const TimelineSettlementCard = ({
   );
 };
 
-const TimelineEmptyState = ({ hasSearch }: { hasSearch: boolean }) => {
+const TimelineEmptyState = ({
+  hasSearch,
+  isMissingImportBatch = false,
+  onAction
+}: {
+  hasSearch: boolean;
+  isMissingImportBatch?: boolean;
+  onAction?: () => void;
+}) => {
   const { accentColor } = useAppearanceTheme();
+  const tone = isMissingImportBatch ? colors.danger : hasSearch ? colors.unclassified : accentColor;
 
   return (
     <PremiumEmptyState
-      icon={hasSearch ? Search : ReceiptText}
+      actionLabel={isMissingImportBatch ? "Back to Data & Import" : undefined}
+      icon={isMissingImportBatch ? FileWarning : hasSearch ? Search : ReceiptText}
       message={
-        hasSearch
+        isMissingImportBatch
+          ? "That statement and its imported transactions were deleted. Upload a new statement or choose another import from your history."
+          : hasSearch
           ? "Try another merchant, category, or note to keep exploring your spending memory."
           : "Import a statement to start building your chronological money story."
       }
-      title={hasSearch ? "No search results" : "No transactions yet"}
-      tone={hasSearch ? colors.unclassified : accentColor}
+      onAction={onAction}
+      title={
+        isMissingImportBatch
+          ? "Import removed"
+          : hasSearch
+            ? "No search results"
+            : "No transactions yet"
+      }
+      tone={tone}
     />
   );
 };

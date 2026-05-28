@@ -12,6 +12,45 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Deleted Import Cleanup Polish
+
+Status: `Done`
+
+Started: 2026-05-27
+
+Goal:
+- Make old recent-import timeline links clear after the related statement has been deleted.
+- Avoid showing a generic empty timeline when the real state is "that import no longer exists here."
+- Keep deleted import cleanup behavior consistent with Data & Import.
+
+Progress Log:
+- 2026-05-27: Started after user approved moving to the next task.
+- 2026-05-27: Confirmed Timeline supports `importBatchId` filtering for recent imports.
+- 2026-05-27: Found that a deleted or missing import batch currently falls through to the generic empty state.
+- 2026-05-27: Added a dedicated removed-import state for stale recent-import Timeline links.
+
+Issues Found:
+- If a user lands on an old recent-import Timeline URL after deleting that statement, the screen can imply there are no transactions generally instead of explaining that the import was removed.
+- The removed-import state should not show normal search/filter controls because those controls imply the import still exists.
+
+Changes Made:
+- Updated `src/features/timeline/timeline-feed-screen.tsx`.
+- Timeline now detects when `importBatchId` has no matching imported transactions.
+- Missing/deleted imports show `Import was removed` and a direct `Back to Data & Import` action.
+- Search and filter controls are hidden for the removed-import state.
+- Valid recent-import links still show the normal recent import timeline.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: fake deleted import URL shows the removed-import message and back action.
+- Browser check: fake deleted import URL hides search and filter controls.
+- Browser check: current valid recent-import URL still shows the normal `Recently imported` timeline.
+
+Approval:
+- 2026-05-27: User approved Deleted Import Cleanup Polish.
+
+## Previous Task
+
 ### Statement Delete / Account Source Lock
 
 Status: `Done`
