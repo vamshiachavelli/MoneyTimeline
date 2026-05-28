@@ -37,6 +37,7 @@ import { colors, radii, spacing } from "@/styles/theme";
 import { withReturnTo } from "@/navigation/return-target";
 
 type HistoryItem = {
+  accountId: string | null;
   accountName: string | null;
   expenseCount: number;
   expenseTotal: number;
@@ -81,6 +82,7 @@ const toTitle = (value: string) =>
 
 const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
   items.map((item) => ({
+    accountId: item.accountId,
     accountName: item.accountName,
     expenseCount: item.transactions.filter((transaction) => transaction.kind === "expense").length,
     expenseTotal:
@@ -113,6 +115,7 @@ const mapRemoteHistory = (items: ImportHistoryItem[]): HistoryItem[] =>
 
 const mapLocalHistory = (batches: SavedImportBatch[]): HistoryItem[] =>
   batches.map((batch) => ({
+    accountId: batch.transactions[0]?.accountId ?? null,
     accountName: batch.transactions[0]?.accountName ?? null,
     expenseCount: batch.transactions.filter((transaction) => transaction.kind === "expense").length,
     expenseTotal: batch.transactions

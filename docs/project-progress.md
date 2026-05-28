@@ -12,6 +12,53 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Statement Delete / Account Source Lock
+
+Status: `Done`
+
+Started: 2026-05-26
+
+Goal:
+- Keep imported statement accounts read-only because the account should come from the PDF statement itself.
+- Remove the manual account-change direction from statement detail.
+- Let users delete a statement, which also removes the imported transactions tied to that statement.
+
+Progress Log:
+- 2026-05-26: Started after user approved the next task.
+- 2026-05-26: Confirmed imported transactions use both `account_id` and `metadata.import_account_name`.
+- 2026-05-26: Confirmed account data comes from the account store and Supabase account service.
+- 2026-05-26: Added account-name fallback from transaction/import account IDs in import history.
+- 2026-05-27: User clarified that account reassignment should not exist because the PDF statement is the source of truth.
+- 2026-05-27: Removed the account-picker direction and pivoted to a statement delete flow.
+
+Issues Found:
+- Older imports can still show `Imported account` because metadata was saved before parser/account detection improvements.
+- Manual account reassignment would undermine the product rule that the statement account is extracted from the PDF.
+- Soft-deleting imported transactions would keep the duplicate hash locked, so deletion needs to actually remove imported transaction rows.
+
+Changes Made:
+- Updated `src/services/supabase/import-history-service.ts`.
+- Updated `src/features/import/data-import-screen.tsx`.
+- Updated `src/features/import/import-detail-screen.tsx`.
+- Import history now falls back to account table names when import metadata is missing.
+- Statement detail no longer exposes any account-edit behavior.
+- Statement detail now has a delete statement action with confirmation.
+- Deleting a remote statement removes its imported transaction rows, marks the import job cancelled/deleted, removes the uploaded file from storage, and refreshes the ledger.
+- Deleting a local saved import removes the local import batch.
+- Deleting a statement also clears any saved local split records tied to those imported transactions.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: import detail page shows `Delete Statement`.
+- Browser check: no account-change or account-picker text appears.
+- Browser check: delete confirmation modal opens.
+- Browser check intentionally did not confirm deletion to avoid removing live imported data during verification.
+
+Approval:
+- 2026-05-27: User approved Statement Delete / Account Source Lock.
+
+## Previous Task
+
 ### Import History / Recent Import Polish
 
 Status: `Done`

@@ -43,6 +43,14 @@ export const getSavedImportBatches = async () => {
   }
 };
 
+export const deleteSavedImportBatch = async (batchId: string) => {
+  const existing = await getSavedImportBatches();
+  await AsyncStorage.setItem(
+    importedTransactionsKey,
+    JSON.stringify(existing.filter((batch) => batch.id !== batchId))
+  );
+};
+
 export const getSavedDuplicateHashes = async () => {
   const batches = await getSavedImportBatches();
 

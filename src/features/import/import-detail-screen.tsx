@@ -8,11 +8,14 @@ import {
   CreditCard,
   FileText,
   ReceiptText,
-  WalletCards
+  Trash2,
+  WalletCards,
+  X
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +27,7 @@ import { PremiumEmptyState } from "@/components/ui/premium-empty-state";
 import { Screen } from "@/components/ui/screen";
 import { useAuth } from "@/features/auth/auth-provider";
 import {
+  deleteSavedImportBatch,
   getSavedImportBatches,
   type SavedImportBatch
 } from "@/features/import/import-save-service";
@@ -33,9 +37,13 @@ import {
   importHistoryService,
   type ImportHistoryItem
 } from "@/services/supabase/import-history-service";
+import { useSplitStore } from "@/features/splits/split-store";
+import { useTransactionLedgerStore } from "@/features/transactions/transaction-ledger";
 import { colors, radii, spacing } from "@/styles/theme";
 
 type ImportDetailTransaction = {
+  accountId?: string | null;
+  accountName?: string | null;
   amount: number;
   date: string;
   id: string;
@@ -44,6 +52,7 @@ type ImportDetailTransaction = {
 };
 
 type ImportDetail = {
+  accountId: string | null;
   accountName: string | null;
   fileName: string;
   fileType: string;
@@ -83,6 +92,7 @@ const getTransactionAmountLabel = (transaction: ImportDetailTransaction) => {
 };
 
 const toRemoteDetail = (item: ImportHistoryItem): ImportDetail => ({
+  accountId: item.accountId,
   accountName: item.accountName,
   fileName: item.fileName,
   fileType: item.fileType.toUpperCase(),
@@ -90,6 +100,8 @@ const toRemoteDetail = (item: ImportHistoryItem): ImportDetail => ({
   importedAt: item.importedAt,
   importedRows: item.importedRows,
   transactions: item.transactions.map((transaction) => ({
+    accountId: transaction.account_id,
+    accountName: item.accountName,
     amount: transaction.amount_minor / 100,
     date: transaction.transaction_date,
     id: transaction.id,
@@ -99,6 +111,7 @@ const toRemoteDetail = (item: ImportHistoryItem): ImportDetail => ({
 });
 
 const toLocalDetail = (batch: SavedImportBatch): ImportDetail => ({
+  accountId: batch.transactions[0]?.accountId ?? null,
   accountName: batch.transactions[0]?.accountName ?? null,
   fileName: batch.fileName,
   fileType: "LOCAL",
@@ -106,6 +119,8 @@ const toLocalDetail = (batch: SavedImportBatch): ImportDetail => ({
   importedAt: batch.importedAt,
   importedRows: batch.transactions.length,
   transactions: batch.transactions.map((transaction) => ({
+    accountId: transaction.accountId,
+    accountName: transaction.accountName,
     amount: Math.abs(transaction.amount),
     date: transaction.date,
     id: `${batch.id}_${transaction.rowNumber}`,
@@ -118,11 +133,17 @@ export const ImportDetailScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
   const { user } = useAuth();
+  const deleteSplitForTransaction = useSplitStore((state) => state.deleteSplitForTransaction);
+  const loadSplits = useSplitStore((state) => state.loadSplits);
+  const loadRemoteTransactions = useTransactionLedgerStore((state) => state.loadRemoteTransactions);
   const params = useLocalSearchParams<{ id?: string; returnTo?: string }>();
   const importId = typeof params.id === "string" ? decodeURIComponent(params.id) : "";
   const returnRoute = getReturnTargetRoute(params.returnTo) ?? "/data-import";
   const [detail, setDetail] = useState<ImportDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -212,6 +233,41 @@ export const ImportDetailScreen = () => {
     router.push(withReturnTo(`/timeline?importBatchId=${encodeURIComponent(importId)}`, "dataImport"));
   };
 
+  const deleteStatement = async () => {
+    if (!detail) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsDeleting(true);
+
+    try {
+      if (user) {
+        await importHistoryService.deleteImportForUser({
+          importJobId: detail.id,
+          userId: user.id
+        });
+        await loadRemoteTransactions(user.id);
+      } else {
+        await deleteSavedImportBatch(detail.id);
+      }
+
+      await loadSplits();
+      for (const transaction of detail.transactions) {
+        await deleteSplitForTransaction(transaction.id);
+      }
+
+      setDeleteConfirmVisible(false);
+      router.replace(returnRoute);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error ? error.message : "Could not delete this statement."
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <Screen>
       <View style={styles.root}>
@@ -280,6 +336,7 @@ export const ImportDetailScreen = () => {
                   </View>
                 </View>
               </View>
+
             </LinearGradient>
 
             <View style={styles.summaryGrid}>
@@ -312,6 +369,19 @@ export const ImportDetailScreen = () => {
               <Clock3 color={colors.background} size={20} strokeWidth={2.6} />
               <Text style={styles.timelineButtonText}>Open in Timeline</Text>
               <ChevronRight color={colors.background} size={20} strokeWidth={2.6} />
+            </Pressable>
+
+            <Pressable
+              accessibilityLabel="Delete this statement"
+              accessibilityRole="button"
+              onPress={() => {
+                setDeleteError(null);
+                setDeleteConfirmVisible(true);
+              }}
+              style={({ pressed }) => [styles.deleteStatementButton, pressed && styles.pressed]}
+            >
+              <Trash2 color={colors.danger} size={19} strokeWidth={2.6} />
+              <Text style={styles.deleteStatementText}>Delete Statement</Text>
             </Pressable>
 
             <View style={styles.sectionHeader}>
@@ -368,10 +438,111 @@ export const ImportDetailScreen = () => {
             </View>
           </ScrollView>
         )}
+        <DeleteStatementModal
+          errorMessage={deleteError}
+          fileName={detail?.fileName ?? "Imported statement"}
+          isDeleting={isDeleting}
+          onClose={() => {
+            if (!isDeleting) {
+              setDeleteConfirmVisible(false);
+              setDeleteError(null);
+            }
+          }}
+          onConfirm={() => void deleteStatement()}
+          transactionCount={detail?.transactions.length ?? 0}
+          visible={deleteConfirmVisible}
+        />
       </View>
     </Screen>
   );
 };
+
+const DeleteStatementModal = ({
+  errorMessage,
+  fileName,
+  isDeleting,
+  onClose,
+  onConfirm,
+  transactionCount,
+  visible
+}: {
+  errorMessage: string | null;
+  fileName: string;
+  isDeleting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  transactionCount: number;
+  visible: boolean;
+}) => (
+  <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalCard}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <View style={styles.deleteModalIcon}>
+            <Trash2 color={colors.danger} size={24} strokeWidth={2.5} />
+          </View>
+          <View style={styles.modalTitleWrap}>
+            <Text style={styles.deleteEyebrow}>Delete statement</Text>
+            <Text style={styles.modalTitle}>Remove this import?</Text>
+            <Text style={styles.modalMeta} numberOfLines={2}>
+              {fileName}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Close delete statement confirmation"
+            accessibilityRole="button"
+            disabled={isDeleting}
+            onPress={onClose}
+            style={({ pressed }) => [styles.modalClose, pressed && styles.pressed]}
+          >
+            <X color={colors.textSecondary} size={18} />
+          </Pressable>
+        </View>
+
+        <View style={styles.deleteWarning}>
+          <Text style={styles.deleteWarningTitle}>
+            This will remove {transactionCount} imported transactions.
+          </Text>
+          <Text style={styles.deleteWarningText}>
+            The account stays read from the original PDF statement. If the statement was wrong,
+            delete it and upload the correct one.
+          </Text>
+        </View>
+
+        {errorMessage ? <Text style={styles.modalError}>{errorMessage}</Text> : null}
+
+        <View style={styles.modalActions}>
+          <Pressable
+            accessibilityLabel="Cancel delete statement"
+            accessibilityRole="button"
+            disabled={isDeleting}
+            onPress={onClose}
+            style={({ pressed }) => [styles.cancelButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Confirm delete statement"
+            accessibilityRole="button"
+            disabled={isDeleting}
+            onPress={onConfirm}
+            style={({ pressed }) => [styles.confirmDeleteButton, pressed && styles.pressed]}
+          >
+            {isDeleting ? (
+              <ActivityIndicator color={colors.textPrimary} size="small" />
+            ) : (
+              <>
+                <Trash2 color={colors.textPrimary} size={17} strokeWidth={2.6} />
+                <Text style={styles.confirmDeleteText}>Delete</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
 
 const SummaryCard = ({
   color,
@@ -565,6 +736,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900"
   },
+  deleteStatementButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 92, 92, 0.32)",
+    backgroundColor: "rgba(255, 92, 92, 0.1)"
+  },
+  deleteStatementText: {
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
+  },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -655,6 +843,139 @@ const styles = StyleSheet.create({
   },
   moneyMovementAmount: {
     color: "#7FA7FF"
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    padding: spacing.md
+  },
+  modalCard: {
+    gap: spacing.md,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(17, 25, 35, 0.98)",
+    padding: spacing.md
+  },
+  modalHandle: {
+    width: 42,
+    height: 4,
+    alignSelf: "center",
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.16)"
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  deleteModalIcon: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 92, 92, 0.14)"
+  },
+  modalTitleWrap: {
+    minWidth: 0,
+    flex: 1
+  },
+  modalEyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    textTransform: "uppercase"
+  },
+  deleteEyebrow: {
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    textTransform: "uppercase"
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 23
+  },
+  modalMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 2
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.06)"
+  },
+  deleteWarning: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 92, 92, 0.2)",
+    backgroundColor: "rgba(255, 92, 92, 0.08)",
+    padding: spacing.md
+  },
+  deleteWarningTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
+  },
+  deleteWarningText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: spacing.xs
+  },
+  modalError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+    textAlign: "center"
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  cancelButton: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)"
+  },
+  cancelButtonText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  confirmDeleteButton: {
+    flex: 1,
+    minHeight: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    borderRadius: radii.lg,
+    backgroundColor: colors.danger
+  },
+  confirmDeleteText: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "900"
   },
   pressed: {
     opacity: 0.72,

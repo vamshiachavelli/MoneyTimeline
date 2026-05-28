@@ -1,7 +1,8 @@
 import { getSupabaseClient } from "@/lib/supabase";
-import type { ImportJob, Transaction, UploadedFile } from "@/types/database";
+import type { Account, ImportJob, Transaction, UploadedFile } from "@/types/database";
 
 export type ImportHistoryItem = {
+  accountId: string | null;
   accountName: string | null;
   duplicateRows: number;
   failedRows: number;
@@ -28,6 +29,81 @@ const readMetadataString = (metadata: unknown, key: string) => {
 };
 
 export const importHistoryService = {
+  deleteImportForUser: async ({
+    importJobId,
+    userId
+  }: {
+    importJobId: string;
+    userId: string;
+  }) => {
+    const supabase = getSupabaseClient();
+    const deletedAt = new Date().toISOString();
+    const { data: job, error: jobReadError } = await supabase
+      .from("import_jobs")
+      .select("*")
+      .eq("id", importJobId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .single();
+
+    if (jobReadError) {
+      throw jobReadError;
+    }
+
+    const { error: transactionError } = await supabase
+      .from("transactions")
+      .delete()
+      .eq("user_id", userId)
+      .eq("import_job_id", importJobId);
+
+    if (transactionError) {
+      throw transactionError;
+    }
+
+    const { error: importJobError } = await supabase
+      .from("import_jobs")
+      .update({
+        deleted_at: deletedAt,
+        status: "cancelled"
+      })
+      .eq("id", importJobId)
+      .eq("user_id", userId);
+
+    if (importJobError) {
+      throw importJobError;
+    }
+
+    if (job?.uploaded_file_id) {
+      const { data: file, error: fileReadError } = await supabase
+        .from("uploaded_files")
+        .select("*")
+        .eq("id", job.uploaded_file_id)
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .single();
+
+      if (!fileReadError && file) {
+        const { error: storageError } = await supabase
+          .storage
+          .from(file.bucket_id)
+          .remove([file.storage_path]);
+
+        if (storageError) {
+          throw storageError;
+        }
+
+        const { error: fileError } = await supabase
+          .from("uploaded_files")
+          .update({ deleted_at: deletedAt })
+          .eq("id", file.id)
+          .eq("user_id", userId);
+
+        if (fileError) {
+          throw fileError;
+        }
+      }
+    }
+  },
   listForUser: async (userId: string): Promise<ImportHistoryItem[]> => {
     const supabase = getSupabaseClient();
     const { data: jobs, error: jobsError } = await supabase
@@ -47,7 +123,11 @@ export const importHistoryService = {
       .filter((id): id is string => Boolean(id));
     const jobIds = importJobs.map((job) => job.id);
 
-    const [{ data: files, error: filesError }, { data: transactions, error: transactionsError }] =
+    const [
+      { data: files, error: filesError },
+      { data: transactions, error: transactionsError },
+      { data: accounts, error: accountsError }
+    ] =
       await Promise.all([
         uploadedFileIds.length > 0
           ? supabase
@@ -64,7 +144,12 @@ export const importHistoryService = {
               .is("deleted_at", null)
               .in("import_job_id", jobIds)
               .order("transaction_date", { ascending: false })
-          : Promise.resolve({ data: [], error: null })
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("accounts")
+          .select("*")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
       ]);
 
     if (filesError) {
@@ -75,8 +160,15 @@ export const importHistoryService = {
       throw transactionsError;
     }
 
+    if (accountsError) {
+      throw accountsError;
+    }
+
     const filesById = new Map(
       ((files ?? []) as UploadedFile[]).map((file) => [file.id, file])
+    );
+    const accountsById = new Map(
+      ((accounts ?? []) as Account[]).map((account) => [account.id, account])
     );
     const transactionsByJob = ((transactions ?? []) as Transaction[]).reduce<
       Record<string, Transaction[]>
@@ -96,6 +188,8 @@ export const importHistoryService = {
       const file = job.uploaded_file_id ? filesById.get(job.uploaded_file_id) : null;
       const jobTransactions = transactionsByJob[job.id] ?? [];
       const firstTransaction = jobTransactions[0] ?? null;
+      const accountId = job.account_id ?? firstTransaction?.account_id ?? null;
+      const matchedAccount = accountId ? accountsById.get(accountId) : null;
       const hasUsefulImportRecord =
         jobTransactions.length > 0 ||
         job.imported_rows > 0 ||
@@ -108,9 +202,10 @@ export const importHistoryService = {
       }
 
       return [{
+        accountId,
         accountName: firstTransaction
-          ? readMetadataString(firstTransaction.metadata, "import_account_name")
-          : null,
+          ? readMetadataString(firstTransaction.metadata, "import_account_name") ?? matchedAccount?.name ?? null
+          : matchedAccount?.name ?? null,
         duplicateRows: job.duplicate_rows,
         failedRows: job.failed_rows,
         fileName: file?.original_file_name ?? "Imported statement",
