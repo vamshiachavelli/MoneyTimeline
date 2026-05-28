@@ -1,5 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   AlertCircle,
   ArrowLeft,
@@ -11,7 +12,7 @@ import {
   RefreshCw,
   UploadCloud
 } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -172,9 +173,11 @@ export const DataImportScreen = () => {
     }
   };
 
-  useEffect(() => {
-    void loadHistory();
-  }, [user?.id]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadHistory();
+    }, [user?.id])
+  );
 
   const totals = useMemo(
     () =>

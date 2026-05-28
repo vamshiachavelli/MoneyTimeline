@@ -12,6 +12,39 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Data Import Focus Refresh
+
+Status: `Done`
+
+Started: 2026-05-27
+
+Goal:
+- Keep Data & Import accurate after upload/delete flows without requiring a manual refresh.
+- Refresh import history whenever the Data & Import screen becomes active.
+- Avoid stale statement cards after a statement has been deleted.
+
+Progress Log:
+- 2026-05-27: Started after pushing the approved deleted-import cleanup.
+- 2026-05-27: Confirmed Data & Import currently loads on user change but not on every screen focus.
+- 2026-05-27: Added focus-based refresh for Data & Import.
+
+Issues Found:
+- Returning to Data & Import from delete/upload flows can leave old history visible until manual refresh.
+
+Changes Made:
+- Updated `src/features/import/data-import-screen.tsx`.
+- Data & Import now reloads import history every time the screen is focused.
+- Removed the mount-only history load path so refresh behavior is consistent.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: `/data-import?focusrefresh=1` renders Data & Import, upload action, and import history/empty state correctly.
+
+Approval:
+- 2026-05-28: User approved Data Import Focus Refresh.
+
+## Previous Task
+
 ### Deleted Import Cleanup Polish
 
 Status: `Done`
