@@ -17,7 +17,7 @@ import {
   UsersRound
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAccountsStore } from "@/features/accounts/account-store";
@@ -45,6 +45,8 @@ import {
 import {
   formatCurrency,
   isSpendTransaction,
+  type Transaction,
+  useTransactionLedgerStore,
   useLedgerTransactions
 } from "@/features/transactions/transaction-ledger";
 import { withReturnTo } from "@/navigation/return-target";
@@ -188,18 +190,91 @@ const getProfileName = (email: string, metadataName?: unknown) => {
   return toTitleName(localPart) || "User";
 };
 
+const csvColumns = [
+  "date",
+  "merchant",
+  "amount",
+  "kind",
+  "classification",
+  "category",
+  "account",
+  "description",
+  "split_connection",
+  "import_batch_id",
+  "transaction_id"
+] as const;
+
+const escapeCsvValue = (value: string | number | null | undefined) => {
+  const text = value == null ? "" : String(value);
+
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+const getExportAmount = (transaction: Transaction) =>
+  isSpendTransaction(transaction) ? -Math.abs(transaction.amount) : Math.abs(transaction.amount);
+
+const buildTransactionsCsv = (transactions: Transaction[]) => {
+  const rows = transactions.map((transaction) => [
+    transaction.date,
+    transaction.merchant,
+    getExportAmount(transaction).toFixed(2),
+    transaction.kind,
+    transaction.classification,
+    transaction.category,
+    transaction.account,
+    transaction.description,
+    transaction.splitConnection,
+    transaction.importBatchId,
+    transaction.id
+  ]);
+
+  return [
+    csvColumns.join(","),
+    ...rows.map((row) => row.map(escapeCsvValue).join(","))
+  ].join("\n");
+};
+
+const downloadCsv = async ({
+  csv,
+  fileName
+}: {
+  csv: string;
+  fileName: string;
+}) => {
+  if (Platform.OS === "web" && typeof document !== "undefined") {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  await Share.share({
+    message: csv,
+    title: fileName
+  });
+};
+
 export default function SettingsScreen() {
   const router = useRouter();
   const { isConfigured, isLoading: isAuthLoading, user } = useAuth();
   const accounts = useAccountsStore((state) => state.accounts);
   const loadAccounts = useAccountsStore((state) => state.loadAccounts);
   const ledgerTransactions = useLedgerTransactions();
+  const remoteTransactionsLoaded = useTransactionLedgerStore((state) => state.remoteHasLoaded);
   const appearance = useAppearanceSettingsStore((state) => state.appearance);
   const loadAppearance = useAppearanceSettingsStore((state) => state.loadAppearance);
   const profile = useProfileSettingsStore((state) => state.profile);
   const hydrateProfile = useProfileSettingsStore((state) => state.hydrateProfile);
   const loadProfile = useProfileSettingsStore((state) => state.loadProfile);
   const [importBatches, setImportBatches] = useState<SettingsImportSummary[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   const [isLoadingImports, setIsLoadingImports] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notice, setNotice] = useState("");
@@ -390,6 +465,7 @@ export default function SettingsScreen() {
     [importBatches]
   );
   const latestImport = importBatches[0] ?? null;
+  const exportLedgerReady = user ? remoteTransactionsLoaded : true;
 
   const showPlaceholderNotice = (feature: string) => {
     setNotice(`${feature} is ready as a placeholder. Full controls arrive after MVP.`);
@@ -415,6 +491,43 @@ export default function SettingsScreen() {
 
   const handleDangerZone = () => {
     setNotice("Danger Zone is protected for Part 2 so data cannot be deleted by accident.");
+  };
+
+  const handleExportData = async () => {
+    if (isExporting) {
+      return;
+    }
+
+    if (!exportLedgerReady) {
+      setNotice("Transactions are still loading. Try exporting again in a moment.");
+      return;
+    }
+
+    if (ledgerTransactions.length === 0) {
+      setNotice("No transactions are available to export yet. Import a statement first.");
+      return;
+    }
+
+    setIsExporting(true);
+
+    try {
+      const csv = buildTransactionsCsv(ledgerTransactions);
+      const dateStamp = new Date().toISOString().slice(0, 10);
+
+      await downloadCsv({
+        csv,
+        fileName: `moneytimeline-transactions-${dateStamp}.csv`
+      });
+      setNotice(`Exported ${ledgerTransactions.length} transactions to CSV.`);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Could not export CSV: ${error.message}`
+          : "Could not export CSV. Please try again."
+      );
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -532,10 +645,17 @@ export default function SettingsScreen() {
               <DataActionCard
                 accent={appearanceAccent.color}
                 icon={Download}
-                meta={`${totalImportedTransactions} imported rows ready for future export`}
-                onPress={() => showPlaceholderNotice("Export data")}
+                meta={
+                  !exportLedgerReady
+                    ? "Preparing transaction data"
+                    : ledgerTransactions.length > 0
+                    ? `${ledgerTransactions.length} transactions ready`
+                    : "Import transactions first"
+                }
+                disabled={isExporting || !exportLedgerReady}
+                onPress={handleExportData}
                 title="Export data"
-                value="CSV export"
+                value={isExporting ? "Preparing" : !exportLedgerReady ? "Loading" : "CSV export"}
               />
             </View>
           </View>
@@ -623,6 +743,7 @@ const SettingRow = ({
 
 const DataActionCard = ({
   accent,
+  disabled = false,
   icon: Icon,
   meta,
   onPress,
@@ -630,6 +751,7 @@ const DataActionCard = ({
   value
 }: {
   accent: string;
+  disabled?: boolean;
   icon: typeof Palette;
   meta: string;
   onPress: () => void;
@@ -639,8 +761,9 @@ const DataActionCard = ({
   <Pressable
     accessibilityLabel={title}
     accessibilityRole="button"
+    disabled={disabled}
     onPress={onPress}
-    style={({ pressed }) => [styles.dataCard, pressed && styles.pressed]}
+    style={({ pressed }) => [styles.dataCard, disabled && styles.disabledCard, pressed && styles.pressed]}
   >
     <View style={[styles.dataIcon, { backgroundColor: `${accent}22` }]}>
       <Icon color={accent} size={21} strokeWidth={2.5} />
@@ -987,6 +1110,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.08)",
     backgroundColor: "rgba(14, 21, 31, 0.82)",
     padding: spacing.md
+  },
+  disabledCard: {
+    opacity: 0.6
   },
   dataIcon: {
     width: 34,

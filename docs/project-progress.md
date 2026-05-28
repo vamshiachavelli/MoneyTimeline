@@ -12,6 +12,46 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### MVP CSV Export
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Replace the Settings `Export data` placeholder with a working MVP transaction CSV export.
+- Export the current signed-in user's ledger data without exposing placeholder behavior.
+- Keep the export simple and useful for testing: date, merchant, amount, account, category, status, kind, notes, split/import ids.
+
+Progress Log:
+- 2026-05-28: Started after user approved the next task.
+- 2026-05-28: Found `Export data` in Settings still uses placeholder notice text.
+- 2026-05-28: Replaced the placeholder with a real CSV generator and web download/native share fallback.
+- 2026-05-28: Added a loading guard so export cannot falsely report no transactions before remote ledger data finishes loading.
+
+Issues Found:
+- The Settings Data workspace presents `CSV export` like a real feature, but tapping it only shows placeholder copy.
+- Export can be tapped while remote transactions are still loading, so the UI needs a clear loading state.
+
+Changes Made:
+- Updated `app/(tabs)/settings.tsx`.
+- Added CSV generation for current ledger transactions.
+- Export columns include date, merchant, amount, kind, classification, category, account, description, split connection, import batch id, and transaction id.
+- Web export downloads a `.csv` file.
+- Native fallback shares the CSV content through the platform share sheet.
+- Settings export card now shows loading/preparing states instead of placeholder copy.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Settings shows Export data / CSV export after transactions load.
+- Browser check: tapping Export data shows `Exported 45 transactions to CSV.`
+- Browser check: placeholder notice no longer appears.
+
+Approval:
+- 2026-05-28: User approved MVP CSV Export.
+
+## Previous Task
+
 ### Data Import Focus Refresh
 
 Status: `Done`
