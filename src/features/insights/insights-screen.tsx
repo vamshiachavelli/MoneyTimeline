@@ -19,8 +19,10 @@ import {
 } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -153,6 +155,39 @@ const getMostActiveDay = (transactions: Transaction[]) => {
   };
 };
 
+const shareRecapText = async (text: string) => {
+  if (Platform.OS === "web" && typeof navigator !== "undefined") {
+    if ("share" in navigator && typeof navigator.share === "function") {
+      await navigator.share({ text, title: "MoneyTimeline monthly recap" });
+      return "shared";
+    }
+
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return "copied";
+      } catch {
+        // Fall through to a text download when clipboard access is blocked.
+      }
+    }
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = "moneytimeline-monthly-recap.txt";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    return "downloaded";
+  }
+
+  await Share.share({ message: text, title: "MoneyTimeline monthly recap" });
+  return "shared";
+};
+
 export const InsightsScreen = () => {
   const router = useRouter();
   const { accentColor, accentSoft, palette } = useAppearanceTheme();
@@ -162,6 +197,7 @@ export const InsightsScreen = () => {
   const returnLabel = getReturnTargetLabel(returnTarget);
   const ledgerTransactions = useLedgerTransactions();
   const [monthDate, setMonthDate] = useState(new Date(2026, 4, 1));
+  const [isSharing, setIsSharing] = useState(false);
   const [notice, setNotice] = useState("");
   const didApplyLatestImportMonth = useRef(false);
   const monthKey = toMonthKey(monthDate);
@@ -264,8 +300,44 @@ export const InsightsScreen = () => {
     setNotice("");
   };
 
-  const showShareNotice = () => {
-    setNotice("Share recap placeholder - export and social cards arrive after MVP.");
+  const shareRecap = async () => {
+    if (isSharing) {
+      return;
+    }
+
+    setIsSharing(true);
+
+    try {
+      const monthTitle = formatMonthTitle(monthDate);
+      const recap = [
+        `MoneyTimeline Recap - ${monthTitle}`,
+        `Total spent: ${formatCurrency(summary.totalSpent)}`,
+        `Personal: ${formatCurrency(summary.personalSpent)}`,
+        `Shared: ${formatCurrency(summary.sharedSpent)} (${sharedShare}% of spend)`,
+        `Needs review: ${formatCurrency(summary.unclassifiedSpent)}`,
+        `Top category: ${topCategory?.label ?? "None"}`,
+        `Top merchant: ${topMerchant?.label ?? "None"}`,
+        `Most active day: ${summary.mostActiveDay?.label ?? "None"}`,
+        `${monthTransactions.length} transactions reviewed.`
+      ].join("\n");
+      const result = await shareRecapText(recap);
+
+      setNotice(
+        result === "copied"
+          ? "Monthly recap copied to clipboard."
+          : result === "downloaded"
+            ? "Monthly recap downloaded as a text file."
+            : "Monthly recap is ready to share."
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Could not share recap: ${error.message}`
+          : "Could not share recap. Please try again."
+      );
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -429,7 +501,8 @@ export const InsightsScreen = () => {
 
               <Pressable
                 accessibilityRole="button"
-                onPress={showShareNotice}
+                disabled={isSharing}
+                onPress={() => void shareRecap()}
                 style={({ pressed }) => [
                   styles.shareButton,
                   { backgroundColor: accentColor },
@@ -437,7 +510,9 @@ export const InsightsScreen = () => {
                 ]}
               >
                 <Share2 color={colors.background} size={18} strokeWidth={2.7} />
-                <Text style={styles.shareButtonText}>Share Recap</Text>
+                <Text style={styles.shareButtonText}>
+                  {isSharing ? "Preparing Recap" : "Share Recap"}
+                </Text>
               </Pressable>
             </>
           ) : (

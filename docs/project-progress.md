@@ -12,6 +12,45 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Insights Recap Share
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Replace the Insights `Share Recap` placeholder with a working MVP share action.
+- Generate a clean text recap using the visible monthly insight data.
+- Use native share where available and web clipboard copy as the browser fallback.
+
+Progress Log:
+- 2026-05-28: Started after committing and pushing Settings Coming Soon Sheet.
+- 2026-05-28: Found `Share Recap` still shows placeholder copy.
+- 2026-05-28: Added real recap generation and sharing/copy/download behavior.
+- 2026-05-28: Added a web fallback for blocked clipboard access.
+
+Issues Found:
+- Insights presents `Share Recap` as a finished action, but it only says export/social cards arrive after MVP.
+- Browser clipboard access can fail when the document is not focused, so web needs a download fallback.
+
+Changes Made:
+- Updated `src/features/insights/insights-screen.tsx`.
+- `Share Recap` now builds a text recap from the selected month's actual insight data.
+- Native uses the platform share sheet.
+- Web uses Web Share when available, then clipboard, then a `.txt` download fallback.
+- Placeholder share notice was removed.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Insights loads a month with transactions and shows `Share Recap`.
+- Browser check: tapping `Share Recap` shows a success notice.
+- Browser check: placeholder notice no longer appears.
+
+Approval:
+- 2026-05-28: User approved Insights Recap Share.
+
+## Previous Task
+
 ### Settings Coming Soon Sheet
 
 Status: `Done`
