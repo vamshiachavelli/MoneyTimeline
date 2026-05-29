@@ -12,6 +12,44 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Profile Placeholder Cleanup
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Remove fake profile actions that behave like placeholders.
+- Keep real MVP profile editing focused on name, phone, and avatar icon.
+- Make account deletion clearly protected for Part 2 instead of tappable placeholder behavior.
+
+Progress Log:
+- 2026-05-28: Started after user approved moving to the next Settings cleanup task.
+- 2026-05-28: Found profile image upload and account deletion still show placeholder notices.
+- 2026-05-28: Removed fake image upload action and made account deletion visibly protected.
+
+Issues Found:
+- `Upload Image` appears actionable but only says camera roll support arrives after MVP.
+- `Delete account` appears actionable but only arms/shows placeholder copy.
+
+Changes Made:
+- Updated `src/features/settings/profile-screen.tsx`.
+- Removed the `Upload Image` placeholder action.
+- Kept `Select Icon` as the real MVP avatar customization action.
+- Disabled the delete account action and changed the copy to make Part 2 protection explicit.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Profile page shows `Select Icon`.
+- Browser check: `Upload Image` is removed.
+- Browser check: delete account shows protected Part 2 copy.
+- Browser check: placeholder copy no longer appears on the profile page.
+
+Approval:
+- 2026-05-28: User approved Profile Placeholder Cleanup.
+
+## Previous Task
+
 ### MVP CSV Export
 
 Status: `Done`

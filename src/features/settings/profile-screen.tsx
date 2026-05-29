@@ -2,7 +2,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
-  Camera,
   Check,
   Image as ImageIcon,
   Save,
@@ -108,7 +107,6 @@ export const ProfileScreen = () => {
   const displayName = getProfileDisplayName(profile, fallbackName);
   const displayEmail = getProfileDisplayEmail(profile, fallbackEmail);
   const fallbackSplitName = splitName(displayName);
-  const [deleteArmed, setDeleteArmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [form, setForm] = useState<ProfileForm>(() => ({
     avatarIcon: profile.avatarIcon,
@@ -194,7 +192,6 @@ export const ProfileScreen = () => {
     setErrorMessage("");
     setNotice("");
     setSaveState("idle");
-    setDeleteArmed(false);
   };
 
   const closeProfile = () => {
@@ -256,21 +253,6 @@ export const ProfileScreen = () => {
     }
   };
 
-  const showImagePlaceholder = () => {
-    setNotice("Image upload placeholder - camera roll support arrives after MVP.");
-    setErrorMessage("");
-  };
-
-  const handleDeleteAccount = () => {
-    if (!deleteArmed) {
-      setDeleteArmed(true);
-      setNotice("Delete account is protected. Tap again when Part 2 account deletion is ready.");
-      return;
-    }
-
-    setNotice("Account deletion placeholder - no data was deleted.");
-  };
-
   return (
     <Screen>
       <View style={styles.root}>
@@ -317,21 +299,12 @@ export const ProfileScreen = () => {
 
             <View style={styles.mediaActions}>
               <Pressable
-                accessibilityLabel="Upload profile image"
+                accessibilityLabel="Select profile icon"
                 accessibilityRole="button"
-                onPress={showImagePlaceholder}
+                onPress={() => setNotice("Choose an icon below to update your profile style.")}
                 style={({ pressed }) => [styles.mediaButton, pressed && styles.pressed]}
               >
-                <Camera color={accentColor} size={16} strokeWidth={2.5} />
-                <Text style={styles.mediaButtonText}>Upload Image</Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Choose profile icon"
-                accessibilityRole="button"
-                onPress={() => setNotice("Choose an icon below for now.")}
-                style={({ pressed }) => [styles.mediaButton, pressed && styles.pressed]}
-              >
-                <ImageIcon color={colors.textSecondary} size={16} strokeWidth={2.5} />
+                <ImageIcon color={accentColor} size={16} strokeWidth={2.5} />
                 <Text style={styles.mediaButtonText}>Select Icon</Text>
               </Pressable>
             </View>
@@ -457,16 +430,16 @@ export const ProfileScreen = () => {
             <View style={styles.dangerCopy}>
               <Text style={styles.dangerTitle}>Delete account</Text>
               <Text style={styles.dangerText}>
-                Protected for now. Future account deletion will require a two-step confirmation.
+                Protected for Part 2. Account deletion will require re-authentication and a two-step confirmation.
               </Text>
             </View>
             <Pressable
-              accessibilityLabel="Delete account"
+              accessibilityLabel="Delete account protected"
               accessibilityRole="button"
-              onPress={handleDeleteAccount}
-              style={({ pressed }) => [styles.deleteButton, deleteArmed && styles.deleteButtonArmed, pressed && styles.pressed]}
+              disabled
+              style={[styles.deleteButton, styles.deleteButtonDisabled]}
             >
-              <Text style={styles.deleteButtonText}>{deleteArmed ? "Armed" : "Delete"}</Text>
+              <Text style={styles.deleteButtonText}>Protected</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -789,8 +762,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 107, 107, 0.14)",
     paddingHorizontal: spacing.md
   },
-  deleteButtonArmed: {
-    backgroundColor: "rgba(255, 107, 107, 0.28)"
+  deleteButtonDisabled: {
+    opacity: 0.72
   },
   deleteButtonText: {
     color: colors.danger,
