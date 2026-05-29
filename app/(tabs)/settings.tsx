@@ -174,6 +174,17 @@ const comingSoonFeatures: Record<string, ComingSoonFeature> = {
     ],
     subtitle: "Help center, feedback, rate app",
     title: "Support"
+  },
+  "Danger Zone": {
+    color: "#FF4F4F",
+    icon: Trash2,
+    points: [
+      "Delete imported statements and transactions safely",
+      "Reset local preferences without touching bank data",
+      "Delete account with re-authentication and two-step confirmation"
+    ],
+    subtitle: "Delete data, reset, or delete account",
+    title: "Danger Zone"
   }
 };
 
@@ -550,7 +561,7 @@ export default function SettingsScreen() {
   };
 
   const handleDangerZone = () => {
-    setNotice("Danger Zone is protected for Part 2 so data cannot be deleted by accident.");
+    openComingSoon("Danger Zone");
   };
 
   const handleExportData = async () => {

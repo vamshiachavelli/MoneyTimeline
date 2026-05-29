@@ -12,6 +12,41 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Settings Danger Zone Sheet
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Replace the Settings Danger Zone banner notice with the polished Part 2 sheet pattern.
+- Make destructive actions feel intentionally protected, not half-implemented.
+- Explain future reset/delete controls without enabling them in MVP.
+
+Progress Log:
+- 2026-05-28: Started after pushing Insights Recap Share.
+- 2026-05-28: Found Settings Danger Zone still uses a one-line protected notice.
+- 2026-05-28: Reused the Part 2 sheet pattern for Danger Zone.
+
+Issues Found:
+- Danger Zone is a high-risk area, so a brief banner does not give enough context about why it is protected.
+
+Changes Made:
+- Updated `app/(tabs)/settings.tsx`.
+- Added a Danger Zone Part 2 sheet with scoped safety bullets.
+- Replaced the old one-line protected notice with the sheet.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: tapping Danger Zone opens the Part 2 sheet.
+- Browser check: sheet explains delete/reset/account deletion protections.
+- Browser check: old one-line banner no longer appears.
+
+Approval:
+- 2026-05-28: User approved Settings Danger Zone Sheet.
+
+## Previous Task
+
 ### Insights Recap Share
 
 Status: `Done`
