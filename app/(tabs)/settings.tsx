@@ -10,6 +10,7 @@ import {
   Landmark,
   LockKeyhole,
   LogOut,
+  type LucideIcon,
   Palette,
   ShieldAlert,
   Trash2,
@@ -17,7 +18,16 @@ import {
   UsersRound
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAccountsStore } from "@/features/accounts/account-store";
@@ -56,7 +66,7 @@ import { colors, radii, spacing } from "@/styles/theme";
 
 type SettingRowProps = {
   color: string;
-  icon: typeof Palette;
+  icon: LucideIcon;
   route?: Href;
   subtitle: string;
   title: string;
@@ -65,6 +75,14 @@ type SettingRowProps = {
 type SettingsImportSummary = {
   fileName: string;
   rows: number;
+};
+
+type ComingSoonFeature = {
+  color: string;
+  icon: LucideIcon;
+  points: string[];
+  subtitle: string;
+  title: string;
 };
 
 const rows: SettingRowProps[] = [
@@ -122,6 +140,42 @@ const rows: SettingRowProps[] = [
     title: "Support"
   }
 ];
+
+const comingSoonFeatures: Record<string, ComingSoonFeature> = {
+  "Notifications": {
+    color: "#F97316",
+    icon: Bell,
+    points: [
+      "Import reminders and monthly recap alerts",
+      "Split follow-ups after shared expenses",
+      "Real-time bank transaction nudges in Part 2"
+    ],
+    subtitle: "Reminders, recaps, and alerts",
+    title: "Notifications"
+  },
+  "Privacy & Security": {
+    color: "#A855F7",
+    icon: LockKeyhole,
+    points: [
+      "App lock and biometric prompts",
+      "Data retention controls for imports and exports",
+      "Sensitive account and statement protection"
+    ],
+    subtitle: "Face ID, auto-lock, data controls",
+    title: "Privacy & Security"
+  },
+  "Support": {
+    color: "#2563EB",
+    icon: CircleHelp,
+    points: [
+      "Help center for imports, splits, and settlements",
+      "Feedback and bug report shortcuts",
+      "App review and release support"
+    ],
+    subtitle: "Help center, feedback, rate app",
+    title: "Support"
+  }
+};
 
 const getCurrentMonthKey = () => {
   const now = new Date();
@@ -278,6 +332,7 @@ export default function SettingsScreen() {
   const [isLoadingImports, setIsLoadingImports] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notice, setNotice] = useState("");
+  const [comingSoonFeature, setComingSoonFeature] = useState<ComingSoonFeature | null>(null);
 
   useEffect(() => {
     void loadAccounts();
@@ -467,8 +522,13 @@ export default function SettingsScreen() {
   const latestImport = importBatches[0] ?? null;
   const exportLedgerReady = user ? remoteTransactionsLoaded : true;
 
-  const showPlaceholderNotice = (feature: string) => {
-    setNotice(`${feature} is ready as a placeholder. Full controls arrive after MVP.`);
+  const openComingSoon = (featureName: string) => {
+    const feature = comingSoonFeatures[featureName];
+
+    if (feature) {
+      setComingSoonFeature(feature);
+      setNotice("");
+    }
   };
 
   const handleLogout = async () => {
@@ -597,7 +657,7 @@ export default function SettingsScreen() {
                   onPress={
                     route
                       ? () => router.push(withReturnTo(String(route), "settings"))
-                      : () => showPlaceholderNotice(row.title)
+                      : () => openComingSoon(row.title)
                   }
                 />
               );
@@ -693,6 +753,10 @@ export default function SettingsScreen() {
             <ChevronRight color={colors.textSecondary} size={20} />
           </Pressable>
         </ScrollView>
+        <ComingSoonSheet
+          feature={comingSoonFeature}
+          onClose={() => setComingSoonFeature(null)}
+        />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -740,6 +804,62 @@ const SettingRow = ({
     <ChevronRight color={colors.textSecondary} size={20} />
   </Pressable>
 );
+
+const ComingSoonSheet = ({
+  feature,
+  onClose
+}: {
+  feature: ComingSoonFeature | null;
+  onClose: () => void;
+}) => {
+  if (!feature) {
+    return null;
+  }
+
+  const Icon = feature.icon;
+
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible>
+      <View style={styles.sheetOverlay}>
+        <View style={styles.sheetCard}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View style={[styles.sheetIcon, { backgroundColor: `${feature.color}22` }]}>
+              <Icon color={feature.color} size={25} strokeWidth={2.5} />
+            </View>
+            <View style={styles.sheetTitleWrap}>
+              <Text style={[styles.sheetEyebrow, { color: feature.color }]}>Part 2</Text>
+              <Text style={styles.sheetTitle}>{feature.title}</Text>
+              <Text style={styles.sheetSubtitle}>{feature.subtitle}</Text>
+            </View>
+          </View>
+
+          <View style={styles.sheetPointList}>
+            {feature.points.map((point) => (
+              <View key={point} style={styles.sheetPoint}>
+                <View style={[styles.sheetPointDot, { backgroundColor: feature.color }]} />
+                <Text style={styles.sheetPointText}>{point}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Pressable
+            accessibilityLabel={`Close ${feature.title} info`}
+            accessibilityRole="button"
+            onPress={onClose}
+            style={({ pressed }) => [
+              styles.sheetButton,
+              { backgroundColor: feature.color },
+              pressed && styles.pressed
+            ]}
+          >
+            <Text style={styles.sheetButtonText}>Got it</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const DataActionCard = ({
   accent,
@@ -1101,6 +1221,98 @@ const styles = StyleSheet.create({
   dataGrid: {
     flexDirection: "row",
     gap: spacing.sm
+  },
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    padding: spacing.md
+  },
+  sheetCard: {
+    gap: spacing.md,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(17, 25, 35, 0.98)",
+    padding: spacing.md
+  },
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    alignSelf: "center",
+    borderRadius: radii.pill,
+    backgroundColor: "rgba(255, 255, 255, 0.16)"
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md
+  },
+  sheetIcon: {
+    width: 50,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 25
+  },
+  sheetTitleWrap: {
+    minWidth: 0,
+    flex: 1
+  },
+  sheetEyebrow: {
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 15,
+    textTransform: "uppercase"
+  },
+  sheetTitle: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 26
+  },
+  sheetSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
+  },
+  sheetPointList: {
+    gap: spacing.sm
+  },
+  sheetPoint: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    paddingHorizontal: spacing.md
+  },
+  sheetPointDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4
+  },
+  sheetPointText: {
+    minWidth: 0,
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17
+  },
+  sheetButton: {
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.lg
+  },
+  sheetButtonText: {
+    color: colors.background,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 19
   },
   dataCard: {
     minHeight: 132,

@@ -12,6 +12,42 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Settings Coming Soon Sheet
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Replace generic Settings placeholder notices with a polished Part 2 information sheet.
+- Make Notifications, Privacy & Security, and Support feel intentional instead of broken.
+- Keep the user on Settings with clear next-step context.
+
+Progress Log:
+- 2026-05-28: Started after committing and pushing profile cleanup.
+- 2026-05-28: Found Settings still uses generic placeholder notices for non-routed rows.
+- 2026-05-28: Added a reusable Part 2 information sheet for non-MVP Settings rows.
+
+Issues Found:
+- Notifications, Privacy & Security, and Support rows show generic placeholder copy instead of a product-quality state.
+
+Changes Made:
+- Updated `app/(tabs)/settings.tsx`.
+- Removed the generic `ready as a placeholder` notice path for Settings rows.
+- Added Part 2 sheets for Notifications, Privacy & Security, and Support.
+- Each sheet has scoped product bullets and a clear `Got it` close action.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: tapping Notifications opens the Part 2 sheet.
+- Browser check: sheet includes feature-specific bullets and `Got it`.
+- Browser check: generic placeholder notice no longer appears.
+
+Approval:
+- 2026-05-28: User approved Settings Coming Soon Sheet.
+
+## Previous Task
+
 ### Profile Placeholder Cleanup
 
 Status: `Done`
