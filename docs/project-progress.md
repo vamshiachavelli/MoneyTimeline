@@ -12,6 +12,113 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Timeline Hero Copy Cleanup
+
+Status: `Done`
+
+Started: 2026-05-29
+
+Goal:
+- Make Timeline hero summary copy accurate for transactions, payments, settlements, and recent imports.
+- Remove misleading `confirmed` wording where the count actually means active non-cancelled settlements.
+- Keep the current Timeline layout unchanged.
+
+Progress Log:
+- 2026-05-29: Started after user approved the Timeline/Transaction Detail cleanup scan result.
+- 2026-05-29: Found Timeline hero copy can say `confirmed` while counting all active settlements.
+- 2026-05-29: Replaced the hero meta with context-aware copy for all timeline states.
+
+Issues Found:
+- Timeline hero settlement copy can mislabel pending/user-confirmed settlements as confirmed.
+- Payments and recent import contexts can show generic settlement-event copy that does not explain what the user is viewing.
+
+Changes Made:
+- Updated `src/features/timeline/timeline-feed-screen.tsx`.
+- Removed the misleading `confirmed` settlement counter.
+- Added accurate hero summary copy for all transactions, payments, settlements, recent import, and removed import states.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Timeline renders successfully.
+- Browser check: old `confirmed - settlement events` wording is gone.
+- Browser check: Timeline all-view hero now shows transaction count and active settlement count.
+
+Approval:
+- 2026-05-29: User approved Timeline Hero Copy Cleanup.
+
+## Previous Task
+
+### Calendar Shared Swipe Cleanup
+
+Status: `Done`
+
+Started: 2026-05-29
+
+Goal:
+- Remove the leftover static split starter from Calendar day details.
+- Keep Shared swipe connected to the real transaction split flow.
+- Avoid fake/default group suggestions such as Apartment Crew in the day sheet.
+
+Progress Log:
+- 2026-05-29: Started after user chose to move out of Settings and approved this cleanup.
+- 2026-05-29: Confirmed the old Calendar split starter still includes static Apartment Crew/equal split preview copy.
+- 2026-05-29: Removed the static split starter and its unused state/styles.
+
+Issues Found:
+- Calendar day details still contain a static split preview component even though the real split flow now lives in Transaction Detail.
+
+Changes Made:
+- Updated `src/features/calendar/calendar-home-screen.tsx`.
+- Removed `SharedSplitStarter` and the fake Apartment Crew/equal split preview.
+- Removed the Calendar-only Shared review state that existed only for that static preview.
+- Shared swipe still opens the real Transaction Detail split flow with `split=1`.
+
+Verification:
+- Static check: `Apartment Crew`, `equal split ready`, and `SharedSplitStarter` are no longer present in Calendar source.
+- `npm run typecheck` passed.
+- Browser check: Calendar renders successfully.
+- Browser check: old static split starter text is not visible.
+
+Approval:
+- 2026-05-29: User approved Calendar Shared Swipe Cleanup.
+
+## Previous Task
+
+### Settings Data Workspace Focus Refresh
+
+Status: `Done`
+
+Started: 2026-05-28
+
+Goal:
+- Keep the Settings Data workspace import summary accurate after uploads and deletes.
+- Refresh import summary whenever Settings becomes active again.
+- Preserve the current Settings design and card layout.
+
+Progress Log:
+- 2026-05-28: Started after user approved the Danger Zone sheet and asked for the next task.
+- 2026-05-28: Found Settings loads import summary only on auth/user changes, so it can stay stale while the tab remains mounted.
+- 2026-05-28: Added focus-based refresh for Settings import summary.
+
+Issues Found:
+- Settings can show an old statement count/latest import after an import or statement deletion until the app reloads.
+
+Changes Made:
+- Updated `app/(tabs)/settings.tsx`.
+- Settings now refreshes import history whenever the screen becomes active.
+- Reused the existing Data workspace layout and summary cards.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser check: Settings renders with the signed-in profile.
+- Browser check: Data workspace, Import history, and Export data cards appear.
+- Browser check: generic placeholder copy is not present.
+
+Approval:
+- 2026-05-28: User approved Settings Data Workspace Focus Refresh.
+
+## Previous Task
+
 ### Settings Danger Zone Sheet
 
 Status: `Done`

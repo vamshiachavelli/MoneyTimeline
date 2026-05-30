@@ -132,7 +132,6 @@ export const CalendarHomeScreen = () => {
   const [monthDate, setMonthDate] = useState(new Date(2026, 4, 1));
   const [selectedKey, setSelectedKey] = useState("2026-05-12");
   const [sheetKey, setSheetKey] = useState<string | null>(null);
-  const [sharedReviewTransaction, setSharedReviewTransaction] = useState<Transaction | null>(null);
   const [undoState, setUndoState] = useState<UndoClassificationState | null>(null);
   const didApplyLatestImportMonth = useRef(false);
 
@@ -203,7 +202,6 @@ export const CalendarHomeScreen = () => {
   const openDaySheet = (key: string) => {
     setSelectedKey(key);
     setSheetKey(key);
-    setSharedReviewTransaction(null);
   };
 
   const changeMonth = (direction: -1 | 1) => {
@@ -211,7 +209,6 @@ export const CalendarHomeScreen = () => {
     setMonthDate(nextMonth);
     setSelectedKey(toDateKey(nextMonth));
     setSheetKey(null);
-    setSharedReviewTransaction(null);
   };
 
   const moveSheetDay = (direction: -1 | 1) => {
@@ -229,7 +226,6 @@ export const CalendarHomeScreen = () => {
 
     setSelectedKey(nextKey);
     setSheetKey(nextKey);
-    setSharedReviewTransaction(null);
   };
 
   const setTransactionClassification = (
@@ -241,7 +237,6 @@ export const CalendarHomeScreen = () => {
     }
 
     if (nextClassification === "shared") {
-      setSharedReviewTransaction({ ...transaction, classification: nextClassification });
       setUndoState(null);
       return;
     }
@@ -259,18 +254,9 @@ export const CalendarHomeScreen = () => {
       return;
     }
 
-    const key = getTransactionKey(undoState.transaction);
     void updateTransaction(undoState.transaction.id, {
       classification: undoState.previousClassification
     });
-
-    if (
-      sharedReviewTransaction &&
-      getTransactionKey(sharedReviewTransaction) === key &&
-      undoState.nextClassification === "shared"
-    ) {
-      setSharedReviewTransaction(null);
-    }
 
     setUndoState(null);
   };
@@ -353,13 +339,8 @@ export const CalendarHomeScreen = () => {
             onClassifyTransaction={setTransactionClassification}
             onClose={() => {
               setSheetKey(null);
-              setSharedReviewTransaction(null);
             }}
-            onCloseSharedReview={() => setSharedReviewTransaction(null)}
             onMoveDay={moveSheetDay}
-            sharedReviewTransaction={
-              sharedReviewTransaction?.date === sheetKey ? sharedReviewTransaction : null
-            }
             transactions={transactionsByDate[sheetKey] ?? []}
             surfaceColor={palette.cardStrong}
           />
@@ -586,9 +567,7 @@ const DayLedgerSheet = ({
   dateKey,
   onClassifyTransaction,
   onClose,
-  onCloseSharedReview,
   onMoveDay,
-  sharedReviewTransaction,
   surfaceColor,
   transactions: dayTransactions
 }: {
@@ -597,9 +576,7 @@ const DayLedgerSheet = ({
   dateKey: string;
   onClassifyTransaction: (transaction: Transaction, classification: Classification) => void;
   onClose: () => void;
-  onCloseSharedReview: () => void;
   onMoveDay: (direction: -1 | 1) => void;
-  sharedReviewTransaction: Transaction | null;
   surfaceColor: string;
   transactions: Transaction[];
 }) => {
@@ -636,7 +613,6 @@ const DayLedgerSheet = ({
     onClassifyTransaction(transaction, classification);
 
     if (classification === "shared") {
-      onCloseSharedReview();
       router.push(`/transaction/${transaction.id}?split=1&returnTo=calendar`);
     }
   };
@@ -707,38 +683,29 @@ const DayLedgerSheet = ({
             <MoreHorizontal color={colors.textSecondary} size={24} />
           </View>
 
-          {sharedReviewTransaction ? (
-            <SharedSplitStarter
-              onClose={onCloseSharedReview}
-              transaction={sharedReviewTransaction}
-            />
-          ) : null}
-
-          {sharedReviewTransaction ? null : (
-            <ScrollView
-              contentContainerStyle={styles.sheetList}
-              showsVerticalScrollIndicator={false}
-              style={styles.sheetListScroller}
-            >
-              {dayTransactions.length > 0 ? (
-                dayTransactions.map((transaction) => (
-                  <SheetTransactionRow
-                    key={getTransactionKey(transaction)}
-                    onClassify={(classification) => classifyTransaction(transaction, classification)}
-                    onPress={() => openTransactionDetail(transaction)}
-                    transaction={transaction}
-                  />
-                ))
-              ) : (
-                <PremiumEmptyState
-                  icon={CalendarDays}
-                  message="This day is clear in your money timeline. Move to another day to keep reviewing."
-                  title="No transactions"
-                  tone={colors.unclassified}
+          <ScrollView
+            contentContainerStyle={styles.sheetList}
+            showsVerticalScrollIndicator={false}
+            style={styles.sheetListScroller}
+          >
+            {dayTransactions.length > 0 ? (
+              dayTransactions.map((transaction) => (
+                <SheetTransactionRow
+                  key={getTransactionKey(transaction)}
+                  onClassify={(classification) => classifyTransaction(transaction, classification)}
+                  onPress={() => openTransactionDetail(transaction)}
+                  transaction={transaction}
                 />
-              )}
-            </ScrollView>
-          )}
+              ))
+            ) : (
+              <PremiumEmptyState
+                icon={CalendarDays}
+                message="This day is clear in your money timeline. Move to another day to keep reviewing."
+                title="No transactions"
+                tone={colors.unclassified}
+              />
+            )}
+          </ScrollView>
 
           <View style={styles.sheetFooter}>
             <Text style={styles.sheetCount}>{dayTransactions.length} transactions</Text>
@@ -750,59 +717,6 @@ const DayLedgerSheet = ({
     </View>
   );
 };
-
-const SharedSplitStarter = ({
-  onClose,
-  transaction
-}: {
-  onClose: () => void;
-  transaction: Transaction;
-}) => (
-  <View style={styles.sharedStarter}>
-    <View style={styles.sharedStarterHeader}>
-      <View style={styles.sharedStarterTitleWrap}>
-        <View style={styles.sharedStarterIcon}>
-          <UsersRound color={colors.shared} size={18} strokeWidth={2.5} />
-        </View>
-        <View style={styles.sharedStarterCopy}>
-          <Text style={styles.detailEyebrow}>Split expense</Text>
-          <Text numberOfLines={1} style={styles.sharedStarterTitle}>
-            {transaction.merchant}
-          </Text>
-        </View>
-      </View>
-            <Text style={styles.sharedStarterAmount}>{formatTransactionAmount(transaction)}</Text>
-    </View>
-
-    <View style={styles.splitModeRow}>
-      <View style={[styles.splitModePill, styles.splitModePillInactive]}>
-        <UserRound color={colors.textSecondary} size={14} strokeWidth={2.4} />
-        <Text style={styles.splitModeText}>Individuals</Text>
-      </View>
-      <View style={[styles.splitModePill, styles.splitModePillActive]}>
-        <UsersRound color={colors.shared} size={14} strokeWidth={2.4} />
-        <Text style={styles.splitModeActiveText}>Group</Text>
-      </View>
-    </View>
-
-    <View style={styles.suggestedSplitCard}>
-      <View>
-        <Text style={styles.suggestedSplitName}>Apartment Crew</Text>
-        <Text style={styles.suggestedSplitMeta}>4 members - equal split ready</Text>
-      </View>
-      <Text style={styles.suggestedSplitAmount}>{formatSpendAmount(transaction.amount / 4)} each</Text>
-    </View>
-
-    <Pressable
-      accessibilityLabel="Continue split setup"
-      accessibilityRole="button"
-      onPress={onClose}
-      style={({ pressed }) => [styles.sharedStarterButton, pressed && styles.pressed]}
-    >
-      <Text style={styles.sharedStarterButtonText}>Continue</Text>
-    </Pressable>
-  </View>
-);
 
 const ClassificationUndoToast = ({
   accentColor,
@@ -1379,136 +1293,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700"
-  },
-  detailEyebrow: {
-    color: colors.accent,
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 13,
-    textTransform: "uppercase"
-  },
-  sharedStarter: {
-    gap: spacing.sm,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: "rgba(246, 166, 59, 0.24)",
-    backgroundColor: "rgba(246, 166, 59, 0.08)",
-    marginBottom: spacing.sm,
-    padding: spacing.md
-  },
-  sharedStarterHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md
-  },
-  sharedStarterTitleWrap: {
-    minWidth: 0,
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm
-  },
-  sharedStarterIcon: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: "rgba(246, 166, 59, 0.16)"
-  },
-  sharedStarterCopy: {
-    minWidth: 0,
-    flex: 1
-  },
-  sharedStarterTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 20
-  },
-  sharedStarterAmount: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "900",
-    lineHeight: 20
-  },
-  splitModeRow: {
-    flexDirection: "row",
-    gap: spacing.sm
-  },
-  splitModePill: {
-    minHeight: 34,
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm
-  },
-  splitModePillInactive: {
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    backgroundColor: "rgba(5, 8, 13, 0.42)"
-  },
-  splitModePillActive: {
-    borderColor: "rgba(246, 166, 59, 0.34)",
-    backgroundColor: "rgba(246, 166, 59, 0.14)"
-  },
-  splitModeText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "900",
-    lineHeight: 16
-  },
-  splitModeActiveText: {
-    color: colors.shared,
-    fontSize: 12,
-    fontWeight: "900",
-    lineHeight: 16
-  },
-  suggestedSplitCard: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: "rgba(5, 8, 13, 0.45)",
-    paddingHorizontal: spacing.md
-  },
-  suggestedSplitName: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 18
-  },
-  suggestedSplitMeta: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: "700",
-    lineHeight: 15
-  },
-  suggestedSplitAmount: {
-    color: colors.shared,
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 15
-  },
-  sharedStarterButton: {
-    minHeight: 38,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radii.pill,
-    backgroundColor: colors.shared
-  },
-  sharedStarterButtonText: {
-    color: colors.background,
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 18
   },
   sheetListScroller: {
     maxHeight: 252

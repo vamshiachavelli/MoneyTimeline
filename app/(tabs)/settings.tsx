@@ -1,4 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "@react-navigation/native";
 import { type Href, useRouter } from "expo-router";
 import {
   Bell,
@@ -17,7 +18,7 @@ import {
   UploadCloud,
   UsersRound
 } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Modal,
   Platform,
@@ -329,6 +330,7 @@ const downloadCsv = async ({
 export default function SettingsScreen() {
   const router = useRouter();
   const { isConfigured, isLoading: isAuthLoading, user } = useAuth();
+  const userId = user?.id;
   const accounts = useAccountsStore((state) => state.accounts);
   const loadAccounts = useAccountsStore((state) => state.loadAccounts);
   const ledgerTransactions = useLedgerTransactions();
@@ -348,8 +350,8 @@ export default function SettingsScreen() {
   useEffect(() => {
     void loadAccounts();
     void loadAppearance();
-    void loadProfile(user?.id);
-  }, [loadAccounts, loadAppearance, loadProfile, user?.id]);
+    void loadProfile(userId);
+  }, [loadAccounts, loadAppearance, loadProfile, userId]);
 
   useEffect(() => {
     if (!user?.id || !user.email) {
@@ -380,54 +382,37 @@ export default function SettingsScreen() {
     };
   }, [hydrateProfile, user?.email, user?.id]);
 
-  useEffect(() => {
-    let isMounted = true;
-
+  const loadImportSummary = useCallback(async () => {
     if (isAuthLoading) {
-      return () => {
-        isMounted = false;
-      };
+      return;
     }
 
-    const loadImportSummary = async () => {
-      if (user) {
-        const remoteItems = await importHistoryService.listForUser(user.id);
+    setIsLoadingImports(true);
 
-        return remoteItems.map((item) => ({
-          fileName: item.fileName,
-          rows: item.importedRows
-        }));
-      }
+    try {
+      const batches = userId
+        ? (await importHistoryService.listForUser(userId)).map((item) => ({
+            fileName: item.fileName,
+            rows: item.importedRows
+          }))
+        : ((await getSavedImportBatches()) as SavedImportBatch[]).map((item) => ({
+            fileName: item.fileName,
+            rows: item.transactions.length
+          }));
 
-      const localItems: SavedImportBatch[] = await getSavedImportBatches();
+      setImportBatches(batches);
+    } catch {
+      setImportBatches([]);
+    } finally {
+      setIsLoadingImports(false);
+    }
+  }, [isAuthLoading, userId]);
 
-      return localItems.map((item) => ({
-        fileName: item.fileName,
-        rows: item.transactions.length
-      }));
-    };
-
-    loadImportSummary()
-      .then((batches) => {
-        if (isMounted) {
-          setImportBatches(batches);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setImportBatches([]);
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoadingImports(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isAuthLoading, user?.id]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadImportSummary();
+    }, [loadImportSummary])
+  );
 
   useEffect(() => {
     if (!notice) {

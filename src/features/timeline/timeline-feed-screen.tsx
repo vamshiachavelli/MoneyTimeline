@@ -259,7 +259,6 @@ export const TimelineFeedScreen = () => {
   const groups = useMemo(() => buildTimelineGroups(filteredItems), [filteredItems]);
   const transactionCount = ledgerTransactions.length;
   const settlementCount = activeSettlements.length;
-  const confirmedSettlementCount = activeSettlements.length;
   const showingLabel = filteredItems.length === 1 ? "activity" : "activities";
   const totalSpend = filteredItems.reduce(
     (sum, item) =>
@@ -291,6 +290,16 @@ export const TimelineFeedScreen = () => {
       : activeFilter === "payments"
         ? "Payments moved"
         : "Total spend";
+  const heroMeta =
+    isMissingImportBatch
+      ? "No transactions are attached to this import anymore"
+      : importBatchId
+        ? "Transactions from this statement"
+        : activeFilter === "payments"
+          ? "Payments and transfers excluded from spend"
+          : activeFilter === "settlements"
+            ? "Active settlement balance activity"
+            : `${transactionCount} transactions - ${settlementCount} active settlements`;
   const unclassifiedCount = ledgerTransactions.filter(
     (transaction) => transaction.classification === "unclassified"
   ).length;
@@ -336,11 +345,7 @@ export const TimelineFeedScreen = () => {
               <View style={styles.heroSpendBlock}>
                 <Text style={styles.heroLabel}>{heroValueLabel}</Text>
                 <Text style={styles.heroSpend}>{formatCurrency(heroValue)}</Text>
-                <Text style={styles.heroMeta}>
-                  {isMissingImportBatch
-                    ? "No transactions are attached to this import anymore"
-                    : `${confirmedSettlementCount} confirmed - ${settlementCount} settlement events`}
-                </Text>
+                <Text style={styles.heroMeta}>{heroMeta}</Text>
               </View>
             </View>
           </LinearGradient>
