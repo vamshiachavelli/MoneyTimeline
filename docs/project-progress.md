@@ -12,6 +12,42 @@ This file tracks active work, decisions, fixes, and approval state.
 
 ## Current Task
 
+### Transaction Detail Edit Cleanup
+
+Status: `Done`
+
+Started: 2026-05-30
+
+Goal:
+- Make imported statement transaction details read-only.
+- Keep classification and split setup editable because those are MoneyTimeline user actions.
+- Prevent users from changing statement-sourced merchant, amount, date, time, account, category, and description.
+
+Progress Log:
+- 2026-05-30: Started after user approved the Transaction Detail edit cleanup direction.
+- 2026-05-30: Found Transaction Detail still exposes full edit mode for imported transactions.
+- 2026-05-30: Locked imported statement fields while preserving classification and split actions.
+
+Issues Found:
+- Imported transactions can be manually edited even though the statement should remain the source of truth.
+
+Changes Made:
+- Updated `src/features/transactions/transaction-detail-screen.tsx`.
+- Imported transactions now show a lock icon instead of the edit pencil.
+- Added a `Statement sourced` notice explaining what is locked and what remains editable.
+- Removed `Edit Details` and full source-field edit mode for imported transactions.
+- Split save no longer rewrites imported source fields; it only saves classification and split connection for imported records.
+- Kept Personal/Shared classification and split setup available.
+
+Verification:
+- `npm run typecheck` passed.
+- Browser visual verification was attempted after restarting Expo, but the app redirected to Login in the test browser session, so the source-lock UI still needs user-side review while signed in.
+
+Approval:
+- 2026-05-30: User approved Transaction Detail Edit Cleanup.
+
+## Previous Task
+
 ### Timeline Hero Copy Cleanup
 
 Status: `Done`
@@ -657,7 +693,7 @@ Approval:
 
 ### Import Detail Page
 
-Status: `Needs Review`
+Status: `Done`
 
 Started: 2026-05-24
 
@@ -689,7 +725,7 @@ Verification:
 - Browser check: Import detail `Open in Timeline` navigated to the filtered timeline URL.
 
 Approval:
-- Waiting for implementation review.
+- 2026-05-25: User approved Import Detail Page cleanup during the Data & Import review flow.
 
 ## Previous Task
 

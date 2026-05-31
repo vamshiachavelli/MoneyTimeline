@@ -466,7 +466,18 @@ export const TransactionDetailScreen = () => {
     setForm(toForm(transaction));
   }, [isEditing, transaction]);
 
-  const validationMessage = form ? validateForm(form) : null;
+  const isImportedTransaction = Boolean(transaction?.importBatchId);
+  const validationMessage = form && !isImportedTransaction ? validateForm(form) : null;
+
+  useEffect(() => {
+    if (!isImportedTransaction || !isEditing) {
+      return;
+    }
+
+    setForm(transaction ? toForm(transaction) : null);
+    setIsEditing(false);
+    setSaveState("idle");
+  }, [isEditing, isImportedTransaction, transaction]);
 
   const updateForm = (patch: Partial<DetailForm>) => {
     setForm((currentForm) => (currentForm ? { ...currentForm, ...patch } : currentForm));
@@ -563,7 +574,7 @@ export const TransactionDetailScreen = () => {
   };
 
   const saveChanges = async () => {
-    if (!transaction || !form || validationMessage) {
+    if (!transaction || !form || isImportedTransaction || validationMessage) {
       return;
     }
 
@@ -662,15 +673,19 @@ export const TransactionDetailScreen = () => {
     });
 
     await updateTransaction(transaction.id, {
-      account: form.account.trim(),
-      amount: Number.parseFloat(form.amount),
-      category: form.category.trim(),
       classification: "shared",
-      date: form.date.trim(),
-      description: form.description.trim(),
-      merchant: form.merchant.trim(),
       splitConnection,
-      time: form.time.trim()
+      ...(isImportedTransaction
+        ? {}
+        : {
+            account: form.account.trim(),
+            amount: Number.parseFloat(form.amount),
+            category: form.category.trim(),
+            date: form.date.trim(),
+            description: form.description.trim(),
+            merchant: form.merchant.trim(),
+            time: form.time.trim()
+          })
     });
 
     setForm({
@@ -763,27 +778,36 @@ export const TransactionDetailScreen = () => {
               {transaction.merchant}
             </Text>
           </View>
-          <Pressable
-            accessibilityLabel={isEditing ? "Cancel editing" : "Edit transaction"}
-            accessibilityRole="button"
-            onPress={() => {
-              if (isEditing) {
-                setForm(toForm(transaction));
-                setIsEditing(false);
-                setSaveState("idle");
-                return;
-              }
+          {isImportedTransaction ? (
+            <View
+              accessibilityLabel="Imported statement details are locked"
+              style={[styles.iconButton, styles.lockedIconButton]}
+            >
+              <ShieldCheck color={accentColor} size={20} strokeWidth={2.5} />
+            </View>
+          ) : (
+            <Pressable
+              accessibilityLabel={isEditing ? "Cancel editing" : "Edit transaction"}
+              accessibilityRole="button"
+              onPress={() => {
+                if (isEditing) {
+                  setForm(toForm(transaction));
+                  setIsEditing(false);
+                  setSaveState("idle");
+                  return;
+                }
 
-              setIsEditing(true);
-            }}
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-          >
-            {isEditing ? (
-              <X color={colors.textSecondary} size={21} strokeWidth={2.5} />
-            ) : (
-              <Pencil color={accentColor} size={20} strokeWidth={2.5} />
-            )}
-          </Pressable>
+                setIsEditing(true);
+              }}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+            >
+              {isEditing ? (
+                <X color={colors.textSecondary} size={21} strokeWidth={2.5} />
+              ) : (
+                <Pencil color={accentColor} size={20} strokeWidth={2.5} />
+              )}
+            </Pressable>
+          )}
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -803,7 +827,7 @@ export const TransactionDetailScreen = () => {
               </View>
             </View>
 
-            {isEditing ? (
+            {isEditing && !isImportedTransaction ? (
               <DetailInput
                 label="Merchant"
                 onChangeText={(merchant) => updateForm({ merchant })}
@@ -815,7 +839,7 @@ export const TransactionDetailScreen = () => {
               </Text>
             )}
 
-            {isEditing ? (
+            {isEditing && !isImportedTransaction ? (
               <DetailInput
                 keyboardType="decimal-pad"
                 label="Amount"
@@ -830,6 +854,8 @@ export const TransactionDetailScreen = () => {
               {formatReadableDate(form.date)} - {form.time}
             </Text>
           </LinearGradient>
+
+          {isImportedTransaction ? <StatementSourceNotice tone={accentColor} /> : null}
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -927,7 +953,7 @@ export const TransactionDetailScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Transaction info</Text>
 
-            {isEditing ? (
+            {isEditing && !isImportedTransaction ? (
               <View style={styles.formGrid}>
                 <DetailInput
                   label="Date"
@@ -947,79 +973,81 @@ export const TransactionDetailScreen = () => {
               </View>
             )}
 
-            <View style={styles.formBlock}>
-              <Text style={styles.formLabel}>Account</Text>
-              <View style={styles.optionWrap}>
-                {accounts.map((account) => {
-                  const active = form.account === account.name;
+            {isEditing && !isImportedTransaction ? (
+              <>
+                <View style={styles.formBlock}>
+                  <Text style={styles.formLabel}>Account</Text>
+                  <View style={styles.optionWrap}>
+                    {accounts.map((account) => {
+                      const active = form.account === account.name;
 
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={!isEditing}
-                      key={account.id}
-                      onPress={() => updateForm({ account: account.name })}
-                      style={({ pressed }) => [
-                        styles.accountOption,
-                        active && [
-                          styles.accountOptionActive,
-                          { backgroundColor: accentSoft, borderColor: `${accentColor}55` }
-                        ],
-                        pressed && styles.pressed
-                      ]}
-                    >
-                      <View style={[styles.accountDot, { backgroundColor: account.color }]} />
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.accountOptionText,
-                          active && styles.accountOptionActiveText
-                        ]}
-                      >
-                        {account.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+                      return (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={account.id}
+                          onPress={() => updateForm({ account: account.name })}
+                          style={({ pressed }) => [
+                            styles.accountOption,
+                            active && [
+                              styles.accountOptionActive,
+                              { backgroundColor: accentSoft, borderColor: `${accentColor}55` }
+                            ],
+                            pressed && styles.pressed
+                          ]}
+                        >
+                          <View style={[styles.accountDot, { backgroundColor: account.color }]} />
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.accountOptionText,
+                              active && styles.accountOptionActiveText
+                            ]}
+                          >
+                            {account.name}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
 
-            <View style={styles.formBlock}>
-              <Text style={styles.formLabel}>Category</Text>
-              <View style={styles.optionWrap}>
-                {categoryOptions.map((category) => {
-                  const active = form.category === category;
+                <View style={styles.formBlock}>
+                  <Text style={styles.formLabel}>Category</Text>
+                  <View style={styles.optionWrap}>
+                    {categoryOptions.map((category) => {
+                      const active = form.category === category;
 
-                  return (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={!isEditing}
-                      key={category}
-                      onPress={() => updateForm({ category })}
-                      style={({ pressed }) => [
-                        styles.categoryOption,
-                        active && [
-                          styles.categoryOptionActive,
-                          { backgroundColor: accentSoft, borderColor: `${accentColor}55` }
-                        ],
-                        pressed && styles.pressed
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.categoryOptionText,
-                          active && styles.categoryOptionActiveText
-                        ]}
-                      >
-                        {category}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+                      return (
+                        <Pressable
+                          accessibilityRole="button"
+                          key={category}
+                          onPress={() => updateForm({ category })}
+                          style={({ pressed }) => [
+                            styles.categoryOption,
+                            active && [
+                              styles.categoryOptionActive,
+                              { backgroundColor: accentSoft, borderColor: `${accentColor}55` }
+                            ],
+                            pressed && styles.pressed
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.categoryOptionText,
+                              active && styles.categoryOptionActiveText
+                            ]}
+                          >
+                            {category}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              </>
+            ) : null}
 
-            {isEditing ? (
+            {isEditing && !isImportedTransaction ? (
               <DetailInput
                 label="Custom category"
                 onChangeText={(category) => updateForm({ category })}
@@ -1035,7 +1063,7 @@ export const TransactionDetailScreen = () => {
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
-            {isEditing ? (
+            {isEditing && !isImportedTransaction ? (
               <DetailInput
                 multiline
                 onChangeText={(description) => updateForm({ description })}
@@ -1068,7 +1096,7 @@ export const TransactionDetailScreen = () => {
             />
           </View>
 
-          {isEditing ? (
+          {isEditing && !isImportedTransaction ? (
             <View style={styles.actionDock}>
               {validationMessage ? (
                 <Text style={styles.validationText}>{validationMessage}</Text>
@@ -1090,7 +1118,7 @@ export const TransactionDetailScreen = () => {
                 </Text>
               </Pressable>
             </View>
-          ) : (
+          ) : isImportedTransaction ? null : (
             <Pressable
               accessibilityRole="button"
               onPress={() => setIsEditing(true)}
@@ -1969,6 +1997,21 @@ const MoneyMovementNotice = ({
   </View>
 );
 
+const StatementSourceNotice = ({ tone }: { tone: string }) => (
+  <View style={[styles.statementSourceNotice, { borderColor: `${tone}33` }]}>
+    <View style={[styles.statementSourceIcon, { backgroundColor: `${tone}1F` }]}>
+      <ShieldCheck color={tone} size={18} strokeWidth={2.6} />
+    </View>
+    <View style={styles.statementSourceCopy}>
+      <Text style={styles.statementSourceTitle}>Statement sourced</Text>
+      <Text style={styles.statementSourceText}>
+        Merchant, amount, date, account, category, and description come from the imported
+        statement. You can still classify it and set up splits.
+      </Text>
+    </View>
+  </View>
+);
+
 const InfoRow = ({
   icon: Icon,
   label,
@@ -2017,6 +2060,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 20,
     backgroundColor: colors.surface
+  },
+  lockedIconButton: {
+    borderWidth: 1,
+    borderColor: "rgba(67, 216, 139, 0.24)",
+    backgroundColor: "rgba(67, 216, 139, 0.1)"
   },
   headerCopy: {
     minWidth: 0,
@@ -2853,6 +2901,40 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   moneyMovementText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
+  },
+  statementSourceNotice: {
+    minHeight: 82,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    backgroundColor: "rgba(67, 216, 139, 0.08)",
+    padding: spacing.md
+  },
+  statementSourceIcon: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 19
+  },
+  statementSourceCopy: {
+    minWidth: 0,
+    flex: 1,
+    gap: 3
+  },
+  statementSourceTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 18
+  },
+  statementSourceText: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
